@@ -4,10 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-ortools = "~=9.3"
-pandas = "~=1.4"
+numpy = "1.24.3"
+pandas = "1.5.3"
+ortools = "~=9.11"
+streamlit = "~=1.40"
 
 [dev-packages]
+ipykernel = "6.29.5"
 
 [requires]
 python_version = "3.9"
