@@ -8,6 +8,8 @@ numpy = "1.24.3"
 pandas = "1.5.3"
 ortools = "~=9.11"
 streamlit = "~=1.40"
+plotly = "*"
+nbformat = "*"
 
 [dev-packages]
 ipykernel = "6.29.5"
