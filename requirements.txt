@@ -1,0 +1,5 @@
+numpy~=1.24
+polars~=1.0
+ortools ~=9.13
+streamlit ~=1.41
+plotly ~=5.24
