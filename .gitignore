@@ -1,2 +1,4 @@
 *.db
 *.dat
+__pycache__
+*.pyc

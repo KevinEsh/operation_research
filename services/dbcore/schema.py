@@ -2,7 +2,7 @@ from datetime import date
 from typing import Optional
 
 from sqlalchemy import CheckConstraint, Sequence, UniqueConstraint
-from sqlmodel import Field, Session, SQLModel, create_engine
+from sqlmodel import Field, SQLModel
 
 
 def id_field(table_name: str):
@@ -32,7 +32,7 @@ class ProductGroups(SQLModel, table=True):
     """
 
     pg_id: Optional[int] = id_field("productgroups")
-    pg_name: str
+    pg_name: str = Field(unique=True)
 
 
 class Products(SQLModel, table=True):
@@ -50,7 +50,7 @@ class Products(SQLModel, table=True):
     """
 
     p_id: Optional[int] = id_field("products")
-    p_name: str
+    p_name: str = Field(unique=True)
     p_pg_id: int = Field(foreign_key="productgroups.pg_id")
     p_perishable: Optional[bool] = Field(default=False)
 
@@ -68,7 +68,7 @@ class Stores(SQLModel, table=True):
     """
 
     s_id: Optional[int] = id_field("stores")
-    s_name: str
+    s_name: str = Field(unique=True)
     s_city: Optional[str] = Field(default=None)
     s_state: Optional[str] = Field(default=None)
     s_country: Optional[str] = Field(default=None)
@@ -89,7 +89,7 @@ class Workshops(SQLModel, table=True):
     """
 
     w_id: Optional[int] = id_field("workshops")
-    w_name: str = Field(default=None)
+    w_name: str = Field(unique=True)
 
 
 class TransportLinks(SQLModel, table=True):
@@ -191,7 +191,39 @@ class DemandPredictions(SQLModel, table=True):
     dp_p_id: int = Field(foreign_key="products.p_id")
     dp_s_id: int = Field(foreign_key="stores.s_id")
     dp_date: date
-    dp_mean: int = Field(ge=0)
+    dp_mean: int = Field(default=0.0, ge=0.0)
+
+
+class Sales(SQLModel, table=True):
+    """
+    CREATE TABLE IF NOT EXISTS sales (
+        s_id INTEGER PRIMARY KEY DEFAULT nextval('sales_id_seq'),
+        s_p_id INTEGER,
+        s_s_id INTEGER,
+        s_date DATE,
+        s_quantity INTEGER CHECK (s_quantity >= 0),
+        UNIQUE (s_p_id, s_s_id, s_date),
+        FOREIGN KEY (s_p_id) REFERENCES products(p_id),
+        FOREIGN KEY (s_s_id) REFERENCES stores(s_id)
+    );
+
+    Args:
+        s_id (Optional[int]): Sale ID, auto-incremented.
+        s_p_id (int): Foreign key referencing the product.
+        s_s_id (int): Foreign key referencing the store.
+        s_date (date): Date of the sale.
+        s_quantity (int): Quantity sold.
+    """
+
+    __table_args__ = (
+        UniqueConstraint("sa_p_id", "sa_s_id", "sa_date", name="unique_sale"),
+    )
+
+    sa_id: Optional[int] = id_field("sales")
+    sa_p_id: int = Field(foreign_key="products.p_id")
+    sa_s_id: int = Field(foreign_key="stores.s_id")
+    sa_date: date
+    sa_units_sold: int = Field(ge=0)
 
 
 class Stocks(SQLModel, table=True):
@@ -273,15 +305,24 @@ class EventStores(SQLModel, table=True):
 
 
 if __name__ == "__main__":
-    engine = create_engine("duckdb:///data/test.db")
-    SQLModel.metadata.create_all(engine)
+    from os import path
+
+    from sqlmodel import Session, create_engine
+
+    if not path.exists("data/test.db"):
+        engine = create_engine("duckdb:///data/test.db")
+        SQLModel.metadata.create_all(engine)
+    else:
+        engine = create_engine("duckdb:///data/test.db")
 
     with Session(engine) as session:
         # Upload dummy data
 
         # 1. Product Groups
         pg1 = ProductGroups(pg_name="BREAD/BAKERY")
-        session.add(pg1)
+        pg2 = ProductGroups(pg_name="DAIRY")
+        pgs = [pg1, pg2]
+        session.add_all(pgs)
         session.commit()
 
         # 2. Products
