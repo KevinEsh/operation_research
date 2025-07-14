@@ -27,8 +27,8 @@ class ProductGroups(SQLModel, table=True):
     );
 
     Args:
-        SQLModel (_type_): _description_
-        table (bool, optional): _description_. Defaults to True.
+        pg_id (Optional[int]): Product group ID, auto-incremented.
+        pg_name (str): Name of the product group.
     """
 
     pg_id: Optional[int] = id_field("productgroups")
@@ -51,8 +51,9 @@ class Products(SQLModel, table=True):
 
     p_id: Optional[int] = id_field("products")
     p_name: str = Field(unique=True)
-    p_pg_id: int = Field(foreign_key="productgroups.pg_id")
-    p_perishable: Optional[bool] = Field(default=False)
+    p_group: str = Field(default=None)
+    p_cluster: Optional[str] = Field(default=None)
+    p_is_perishable: Optional[bool] = Field(default=False)
 
 
 class Stores(SQLModel, table=True):
@@ -65,6 +66,11 @@ class Stores(SQLModel, table=True):
     Args:
         s_id (Optional[int]): Store ID, auto-incremented.
         s_name (str): Name of the store.
+        s_city (Optional[str]): City where the store is located.
+        s_state (Optional[str]): State where the store is located.
+        s_country (Optional[str]): Country where the store is located.
+        s_type (Optional[str]): Type of the store (e.g., retail, wholesale, online).
+        s_cluster (Optional[str]): Cluster of the store (e.g., urban, suburban, rural).
     """
 
     s_id: Optional[int] = id_field("stores")
@@ -72,8 +78,8 @@ class Stores(SQLModel, table=True):
     s_city: Optional[str] = Field(default=None)
     s_state: Optional[str] = Field(default=None)
     s_country: Optional[str] = Field(default=None)
-    s_type: Optional[str] = Field(default=None)  # e.g., retail, wholesale, online
-    s_cluster: Optional[str] = Field(default=None)  # e.g., urban, suburban, rural
+    s_type: Optional[str] = Field(default=None)
+    s_cluster: Optional[str] = Field(default=None)
 
 
 class Workshops(SQLModel, table=True):
@@ -108,16 +114,18 @@ class TransportLinks(SQLModel, table=True):
         tl_id (Optional[int]): Transport link ID, auto-incremented.
         tl_w_id (int): Foreign key referencing the workshop.
         tl_s_id (int): Foreign key referencing the store.
-        tl_cost (float): Cost of the transport link.
+        tl_p_id (int): Foreign key referencing the product.
+        tl_cost (float): Cost of the transport link from workshop to store for the product.
     """
 
     __table_args__ = (
-        UniqueConstraint("tl_w_id", "tl_s_id", name="unique_transport_link"),
+        UniqueConstraint("tl_w_id", "tl_s_id", "tl_p_id", name="unique_transport_link"),
     )
 
     tl_id: Optional[int] = id_field("transportlinks")
     tl_w_id: int = Field(foreign_key="workshops.w_id")
     tl_s_id: int = Field(foreign_key="stores.s_id")
+    tl_p_id: int = Field(foreign_key="products.p_id")
     tl_cost: float = Field(default=0.0, ge=0.0)
 
 
@@ -172,8 +180,8 @@ class DemandPredictions(SQLModel, table=True):
         FOREIGN KEY (dp_p_id) REFERENCES products(p_id),
         FOREIGN KEY (dp_s_id) REFERENCES stores(s_id)
     );
-
-    Args:
+    \n
+    Args:\n
         dp_id (Optional[int]): Demand prediction ID, auto-incremented.
         dp_p_id (int): Foreign key referencing the product.
         dp_s_id (int): Foreign key referencing the store.
@@ -191,7 +199,7 @@ class DemandPredictions(SQLModel, table=True):
     dp_p_id: int = Field(foreign_key="products.p_id")
     dp_s_id: int = Field(foreign_key="stores.s_id")
     dp_date: date
-    dp_mean: int = Field(default=0.0, ge=0.0)
+    dp_mean: int = Field(default=None, ge=0.0)
 
 
 class Sales(SQLModel, table=True):
@@ -226,6 +234,42 @@ class Sales(SQLModel, table=True):
     sa_units_sold: int = Field(ge=0)
 
 
+class Promotions(SQLModel, table=True):
+    """
+    CREATE TABLE IF NOT EXISTS promotions (
+        pr_id INTEGER PRIMARY KEY DEFAULT nextval('promotions_id_seq'),
+        pr_p_id INTEGER,
+        pr_s_id INTEGER,
+        pr_start_date DATE,
+        pr_end_date DATE CHECK (pr_start_date < pr_end_date),
+        UNIQUE (pr_p_id, pr_s_id, pr_start_date, pr_end_date),
+        FOREIGN KEY (pr_p_id) REFERENCES products(p_id),
+        FOREIGN KEY (pr_s_id) REFERENCES stores(s_id)
+    );
+
+    Args:
+        pr_id (Optional[int]): Promotion ID, auto-incremented.
+        pr_p_id (int): Foreign key referencing the product.
+        pr_s_id (int): Foreign key referencing the store.
+        pr_start_date (date): Start date of the promotion.
+        pr_end_date (date): End date of the promotion.
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "pr_p_id",
+            "pr_s_id",
+            "pr_date",
+            name="unique_promotion",
+        ),
+    )
+
+    pr_id: Optional[int] = id_field("promotions")
+    pr_p_id: int = Field(foreign_key="products.p_id")
+    pr_s_id: int = Field(foreign_key="stores.s_id")
+    pr_date: date
+
+
 class Stocks(SQLModel, table=True):
     """
     CREATE TABLE IF NOT EXISTS stocks (
@@ -245,8 +289,7 @@ class Stocks(SQLModel, table=True):
         sk_p_id (int): Foreign key referencing the product.
         sk_s_id (int): Foreign key referencing the store.
         sk_date (date): Date of the stock record.
-        sk_starting_inventory (int): Starting inventory for the period.
-        sk_ending_inventory (int): Ending inventory for the period.
+        sk_units (int): Ending inventory for the period in sk_date.
     """
 
     __table_args__ = (
@@ -257,8 +300,7 @@ class Stocks(SQLModel, table=True):
     sk_p_id: int = Field(foreign_key="products.p_id")
     sk_s_id: int = Field(foreign_key="stores.s_id")
     sk_date: date
-    sk_starting_inventory: int = Field(ge=0)  # TODO: REMOVE ONE OF THESE
-    sk_ending_inventory: int = Field(ge=0)
+    sk_units: int = Field(default=0, ge=0)
 
 
 class Events(SQLModel, table=True):
@@ -271,10 +313,13 @@ class Events(SQLModel, table=True):
     Args:
         e_id (Optional[int]): Event ID, auto-incremented.
         e_name (str): Name of the event.
+        e_type (Optional[str]): Type of the event (e.g., holiday, festival). Defaults to None.
     """
 
     e_id: Optional[int] = id_field("events")
-    e_name: str
+    e_name: str = Field(default=None, unique=True)
+    e_type: Optional[str] = Field(default=None)
+    e_locality: Optional[str] = Field(default=None)
 
 
 class EventStores(SQLModel, table=True):

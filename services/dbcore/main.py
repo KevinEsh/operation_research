@@ -8,6 +8,7 @@ from schema import (
     Procurements,
     ProductGroups,
     Products,
+    Promotions,
     Sales,
     SQLModel,
     Stocks,
@@ -41,7 +42,7 @@ def get_error_msg(error):
     return msg
 
 
-@app.get("/productgroups/")
+@app.get("/productgroups")
 def get_productgroups(session: Session = Depends(get_session)):
     """
     Get all product groups.
@@ -59,6 +60,28 @@ def bulk_create_productgroups(pgs: List[ProductGroups], session=Depends(get_sess
         session.rollback()
         raise HTTPException(status_code=400, detail=get_error_msg(error))
     return {"productgroups": [pg.pg_id for pg in pgs]}
+
+
+@app.patch("/productgroups/{pg_id}")
+def update_productgroup(
+    pg_id: int, pg: ProductGroups, session: Session = Depends(get_session)
+):
+    """Update a specific product group by ID."""
+    existing_pg = session.get(ProductGroups, pg_id)
+    if not existing_pg:
+        raise HTTPException(status_code=404, detail="ProductGroup not found")
+
+    pg_data = pg.model_dump(exclude_unset=True)
+    existing_pg.sqlmodel_update(pg_data)
+
+    try:
+        session.add(existing_pg)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=get_error_msg(error))
+
+    return {"message": "ProductGroup updated successfully", "productgroup_id": pg_id}
 
 
 # @app.get("/productgroups/{pg_id}")
@@ -81,7 +104,7 @@ def get_products(session: Session = Depends(get_session)):
     return {"products": products}
 
 
-@app.post("/products/")
+@app.post("/products")
 def bulk_create_product(
     products: List[Products], session: Session = Depends(get_session)
 ):
@@ -101,6 +124,28 @@ def bulk_create_product(
         raise HTTPException(status_code=400, detail=get_error_msg(error))
 
     return {"products": [p.p_id for p in products]}
+
+
+@app.put("/products/{p_id}")
+def update_product(
+    p_id: int, product: Products, session: Session = Depends(get_session)
+):
+    """Update a specific product by ID."""
+    existing_product = session.get(Products, p_id)
+    if not existing_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    for key, value in product.model_dump(exclude_unset=True).items():
+        setattr(existing_product, key, value)
+
+    try:
+        session.add(existing_product)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=get_error_msg(error))
+
+    return {"message": "Product updated successfully", "product_id": p_id}
 
 
 # @app.get("/products/{p_id}")
@@ -123,7 +168,7 @@ def get_stores(session: Session = Depends(get_session)):
     return {"stores": stores}
 
 
-@app.post("/stores/")
+@app.post("/stores")
 def bulk_create_stores(stores: List[Stores], session: Session = Depends(get_session)):
     """
     Create stores in bulk.
@@ -294,6 +339,36 @@ def bulk_create_sales(sales: List[Sales], session: Session = Depends(get_session
         raise HTTPException(status_code=400, detail=get_error_msg(error))
 
     return {"sales": [sale.sa_id for sale in sales]}
+
+
+@app.get("/promotions")
+def get_promotions(session: Session = Depends(get_session)):
+    """
+    Get all promotions.
+    """
+    promotions = session.exec(select(Products)).all()
+    return {"promotions": promotions}
+
+
+@app.post("/promotions")
+def bulk_create_promotions(
+    promotions: List[Promotions], session: Session = Depends(get_session)
+):
+    """Create promotions in bulk.
+    This endpoint expects a list of Products.
+    If no promotions are provided, it raises a 400 error.
+    """
+    if not promotions:
+        raise HTTPException(status_code=400, detail="No promotions provided")
+
+    try:
+        session.add_all(promotions)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=get_error_msg(error))
+
+    return {"promotions": [pr.pr_id for pr in promotions]}
 
 
 @app.get("/stocks")
