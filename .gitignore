@@ -2,3 +2,6 @@
 *.dat
 __pycache__
 *.pyc
+*.pkl
+*.parquet
+*.csv

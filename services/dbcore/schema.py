@@ -118,9 +118,7 @@ class TransportLinks(SQLModel, table=True):
         tl_cost (float): Cost of the transport link from workshop to store for the product.
     """
 
-    __table_args__ = (
-        UniqueConstraint("tl_w_id", "tl_s_id", "tl_p_id", name="unique_transport_link"),
-    )
+    __table_args__ = (UniqueConstraint("tl_w_id", "tl_s_id", "tl_p_id", name="unique_transport_link"),)
 
     tl_id: Optional[int] = id_field("transportlinks")
     tl_w_id: int = Field(foreign_key="workshops.w_id")
@@ -189,11 +187,7 @@ class DemandPredictions(SQLModel, table=True):
         dp_mean (int): Mean demand prediction value.
     """
 
-    __table_args__ = (
-        UniqueConstraint(
-            "dp_p_id", "dp_s_id", "dp_date", name="unique_demand_prediction"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("dp_p_id", "dp_s_id", "dp_date", name="unique_demand_prediction"),)
 
     dp_id: Optional[int] = id_field("demandpredictions")
     dp_p_id: int = Field(foreign_key="products.p_id")
@@ -223,9 +217,7 @@ class Sales(SQLModel, table=True):
         s_quantity (int): Quantity sold.
     """
 
-    __table_args__ = (
-        UniqueConstraint("sa_p_id", "sa_s_id", "sa_date", name="unique_sale"),
-    )
+    __table_args__ = (UniqueConstraint("sa_p_id", "sa_s_id", "sa_date", name="unique_sale"),)
 
     sa_id: Optional[int] = id_field("sales")
     sa_p_id: int = Field(foreign_key="products.p_id")
@@ -292,9 +284,7 @@ class Stocks(SQLModel, table=True):
         sk_units (int): Ending inventory for the period in sk_date.
     """
 
-    __table_args__ = (
-        UniqueConstraint("sk_p_id", "sk_s_id", "sk_date", name="unique_stock"),
-    )
+    __table_args__ = (UniqueConstraint("sk_p_id", "sk_s_id", "sk_date", name="unique_stock"),)
 
     sk_id: Optional[int] = id_field("stocks")
     sk_p_id: int = Field(foreign_key="products.p_id")
@@ -339,9 +329,7 @@ class EventStores(SQLModel, table=True):
         es_s_id (int): Foreign key referencing the store.
     """
 
-    __table_args__ = (
-        UniqueConstraint("es_e_id", "es_s_id", "es_date", name="unique_event_store"),
-    )
+    __table_args__ = (UniqueConstraint("es_e_id", "es_s_id", "es_date", name="unique_event_store"),)
 
     es_id: Optional[int] = id_field("eventstores")
     es_e_id: int = Field(foreign_key="events.e_id")
