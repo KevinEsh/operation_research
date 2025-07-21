@@ -48,7 +48,7 @@ def drop_columns(df: pl.DataFrame, col_names: List[str]) -> pl.DataFrame:
         df.drop_in_place(col_name)
 
 
-def feature_engineering(
+def rolling_features(
     df: pl.LazyFrame, target: str, horizon: int, agg_level: List[str], fill_nulls: bool = False
 ) -> pl.LazyFrame:
     """
@@ -173,38 +173,33 @@ def run_feature_engineering(
     drop_columns(dataset, target_cols)
 
     # Apply feature engineering
-    df_train_input = feature_engineering(dataset, target, horizon, agg_level)
+    df_train_input = rolling_features(dataset, target, horizon, agg_level)
     df_train_dates = pop_columns(df_train_input, ["c_date"])
 
-    save_parquet(df_train_target, "../../data/favorita_dataset/output/train_target.parquet")
-    save_parquet(df_train_input, "../../data/favorita_dataset/output/train_input.parquet")
-    save_parquet(df_train_dates, "../../data/favorita_dataset/output/train_dates.parquet")
+    # Save the final datasets
+    save_parquet(df_train_input, FEATURE_STORE_PATH + "train_input.parquet")
+    save_parquet(df_train_target, FEATURE_STORE_PATH + "train_target.parquet")
+    save_parquet(df_train_dates, FEATURE_STORE_PATH + "train_dates.parquet")
 
-    return df_train_input, df_train_target, df_train_dates
+    return
 
 
 @click.command()
 # @click.option("--today", default="2016-08-15", help="Start date for training data.")
 @click.option("--target", default="log_units_sold", help="Target variable for prediction.")
 @click.option("--horizon", default=7, help="Number of days to predict.")
-@click.option("--agg_level", default=["product_id", "store_id"], help="Aggregation level for features.")
-def cli_run_feature_engineering(target: str, horizon: int, agg_level: List[str]):
+def cli_run_feature_engineering(target: str, horizon: int):
     """
     Main function to run the feature engineering pipeline.
     """
 
     # Load the snapshot data
     df_train_snapshot = pl.read_parquet(SNAPSHOTS_PATH + "train_snapshot.parquet")
+    agg_level = ["product_id", "store_id"]  # Ensure agg_level is a list of strings
 
     # Run feature engineering
-    df_train_input, df_train_target, df_train_dates = run_feature_engineering(
-        df_train_snapshot, target, horizon, agg_level
-    )
-
-    # Save the final datasets
-    save_parquet(df_train_input, FEATURE_STORE_PATH + "train_input.parquet")
-    save_parquet(df_train_target, FEATURE_STORE_PATH + "train_target.parquet")
-    save_parquet(df_train_dates, FEATURE_STORE_PATH + "train_dates.parquet")
+    run_feature_engineering(df_train_snapshot, target, horizon, agg_level)
+    return
 
 
 if __name__ == "__main__":

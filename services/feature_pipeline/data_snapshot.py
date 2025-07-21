@@ -1,7 +1,7 @@
 import click
 import duckdb
 
-SNAPSHOTS_PATH = "../../data/favorita_dataset/snapshots/"
+SNAPSHOTS_PATH = "../dbcore/data/snapshots/"
 
 
 def download_snapshot(date_from: str, date_upto: str) -> None:
@@ -20,17 +20,15 @@ def download_snapshot(date_from: str, date_upto: str) -> None:
     with duckdb.connect(database="../dbcore/data/core.db", read_only=True) as con:
         train_snapshot_df = con.execute(query_snapshot).pl()
     # "../../data/favorita_dataset/snapshots/train_snapshot.parquet"
-    train_snapshot_df.write_parquet(
-        SNAPSHOTS_PATH="../../data/favorita_dataset/snapshots/" + "train_snapshot.parquet", compression="zstd"
-    )
+    train_snapshot_df.write_parquet(SNAPSHOTS_PATH + "train_snapshot.parquet", compression="zstd")
     return
 
 
 @click.command()
-@click.option("--date_from", default="2013-01-01", help="Start date for training data.")
-@click.option("--date_upto", default="2016-08-15", help="End date for training data.")
-def cli_download_snapshot(date_from: str, date_upto: str) -> None:
-    download_snapshot(date_from, date_upto)
+@click.option("--train_from", default="2013-01-01", help="Start date for training data.")
+@click.option("--train_upto", default="2016-08-15", help="End date for training data.")
+def cli_download_snapshot(train_from: str, train_upto: str) -> None:
+    download_snapshot(train_from, train_upto)
 
 
 if __name__ == "__main__":
