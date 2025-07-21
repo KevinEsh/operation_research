@@ -1,4 +1,4 @@
-snapshot_query = """
+query_snapshot = """
 -- CREATE TABLE train_snapshot AS
 with sales_snapshot as (
   select 
