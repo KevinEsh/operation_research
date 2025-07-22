@@ -1,0 +1,8 @@
+{
+    "python.defaultInterpreterPath": "{workSpaceFolder}/services/dbcore/.venv/bin/python",
+    "jupyter.kernels.excludePythonEnvironments": [
+        "~/miniconda3/envs/tf/scripts/python.exe",
+        "~/miniconda3/envs/ds",
+        "{workspaceFolderBasename}/.venv/bin/python"
+    ]
+}

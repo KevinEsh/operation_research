@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "services/dbcore/.venv/bin/python",
+    "notebook.defaultFormatter": "ms-python.python"
+}
