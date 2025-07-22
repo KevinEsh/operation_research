@@ -80,6 +80,8 @@ class Stores(SQLModel, table=True):
     s_country: Optional[str] = Field(default=None)
     s_type: Optional[str] = Field(default=None)
     s_cluster: Optional[str] = Field(default=None)
+    s_longitude: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
+    s_latitude: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
 
 
 class Workshops(SQLModel, table=True):
@@ -96,6 +98,9 @@ class Workshops(SQLModel, table=True):
 
     w_id: Optional[int] = id_field("workshops")
     w_name: str = Field(unique=True)
+    w_capacity: Optional[int] = Field(default=None, ge=0)
+    w_longitude: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
+    w_latitude: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
 
 
 class TransportLinks(SQLModel, table=True):
@@ -121,10 +126,11 @@ class TransportLinks(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("tl_w_id", "tl_s_id", "tl_p_id", name="unique_transport_link"),)
 
     tl_id: Optional[int] = id_field("transportlinks")
-    tl_w_id: int = Field(foreign_key="workshops.w_id")
-    tl_s_id: int = Field(foreign_key="stores.s_id")
     tl_p_id: int = Field(foreign_key="products.p_id")
-    tl_cost: float = Field(default=0.0, ge=0.0)
+    tl_s_id: int = Field(foreign_key="stores.s_id")
+    tl_w_id: int = Field(foreign_key="workshops.w_id")
+    tl_package_cost: float = Field(default=None, ge=0.0)
+    tl_package_size: int = Field(default=None, ge=0)
 
 
 class Procurements(SQLModel, table=True):
@@ -194,6 +200,38 @@ class DemandPredictions(SQLModel, table=True):
     dp_s_id: int = Field(foreign_key="stores.s_id")
     dp_date: date
     dp_mean: int = Field(default=None, ge=0.0)
+
+
+class DemandFulfillments(SQLModel, table=True):
+    """
+    CREATE TABLE IF NOT EXISTS demand_fulfillments (
+        df_id INTEGER PRIMARY KEY DEFAULT nextval('demand_fulfillments_id_seq'),
+        df_p_id INTEGER,
+        df_s_id INTEGER,
+        df_date DATE,
+        df_units_sold INTEGER CHECK (df_units_sold >= 0),
+        UNIQUE (df_p_id, df_s_id, df_date),
+        FOREIGN KEY (df_p_id) REFERENCES products(p_id),
+        FOREIGN KEY (df_s_id) REFERENCES stores(s_id)
+    );
+
+    Args:
+        df_id (Optional[int]): Demand fulfillment ID, auto-incremented.
+        df_p_id (int): Foreign key referencing the product.
+        df_s_id (int): Foreign key referencing the store.
+        df_w_id (int): Foreign key referencing the workshop.
+        df_date (date): Date of the demand fulfillment.
+        df_units_sent (int): Number of units sent on that date.
+    """
+
+    __table_args__ = (UniqueConstraint("df_p_id", "df_s_id", "df_date", name="unique_demand_fulfillment"),)
+
+    df_id: Optional[int] = id_field("demandfulfillments")
+    df_p_id: int = Field(foreign_key="products.p_id")
+    df_s_id: int = Field(foreign_key="stores.s_id")
+    df_w_id: int = Field(foreign_key="workshops.w_id")
+    df_date: date
+    df_packages_sent: int = Field(default=None, ge=0)
 
 
 class Sales(SQLModel, table=True):
