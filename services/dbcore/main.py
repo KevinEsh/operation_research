@@ -1,6 +1,8 @@
+from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException
+from dbconfig import SessionType, create_db_and_tables
+from fastapi import FastAPI, HTTPException
 from schema import (
     DemandPredictions,
     Events,
@@ -10,32 +12,25 @@ from schema import (
     Products,
     Promotions,
     Sales,
-    SQLModel,
     Stocks,
     Stores,
     TransportLinks,
     Workshops,
 )
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, create_engine, select
-
-app = FastAPI()
-
-# check if the database file exists
-# If not, it will be created when the first table is created
-DB_PATH = "data/core.db"
-DB_URI = f"duckdb:///{DB_PATH}"
+from sqlmodel import select
 
 
-def get_session():
-    engine = create_engine(DB_URI)
-    SQLModel.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        yield session
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    create_db_and_tables()
+    yield
 
 
-def get_error_msg(error):
+app = FastAPI(lifespan=lifespan)
+
+
+def get_error_msg(error) -> str:
     msg = str(error)
     if "Constraint Error:" in msg:
         return msg.split("Constraint Error:")[1].split("\n")[0].strip()
@@ -43,7 +38,7 @@ def get_error_msg(error):
 
 
 @app.get("/productgroups")
-def get_productgroups(session: Session = Depends(get_session)):
+def get_productgroups(session: SessionType):
     """
     Get all product groups.
     """
@@ -52,7 +47,7 @@ def get_productgroups(session: Session = Depends(get_session)):
 
 
 @app.post("/productgroups")
-def bulk_create_productgroups(pgs: List[ProductGroups], session=Depends(get_session)):
+def bulk_create_productgroups(pgs: List[ProductGroups], session: SessionType):
     try:
         session.add_all(pgs)
         session.commit()
@@ -63,9 +58,7 @@ def bulk_create_productgroups(pgs: List[ProductGroups], session=Depends(get_sess
 
 
 @app.patch("/productgroups/{pg_id}")
-def update_productgroup(
-    pg_id: int, pg: ProductGroups, session: Session = Depends(get_session)
-):
+def update_productgroup(pg_id: int, pg: ProductGroups, session: SessionType):
     """Update a specific product group by ID."""
     existing_pg = session.get(ProductGroups, pg_id)
     if not existing_pg:
@@ -85,7 +78,7 @@ def update_productgroup(
 
 
 # @app.get("/productgroups/{pg_id}")
-# def get_productgroup(pg_id: int, session: Session = Depends(get_session)):
+# def get_productgroup(pg_id: int, session: SessionType):
 #     """
 #     Get a specific product group by ID.
 #     """
@@ -96,7 +89,7 @@ def update_productgroup(
 
 
 @app.get("/products")
-def get_products(session: Session = Depends(get_session)):
+def get_products(session: SessionType):
     """
     Get all products.
     """
@@ -105,9 +98,7 @@ def get_products(session: Session = Depends(get_session)):
 
 
 @app.post("/products")
-def bulk_create_product(
-    products: List[Products], session: Session = Depends(get_session)
-):
+def bulk_create_product(products: List[Products], session: SessionType):
     """
     Create products in bulk.
     This endpoint expects a list of Products.
@@ -127,9 +118,7 @@ def bulk_create_product(
 
 
 @app.put("/products/{p_id}")
-def update_product(
-    p_id: int, product: Products, session: Session = Depends(get_session)
-):
+def update_product(p_id: int, product: Products, session: SessionType):
     """Update a specific product by ID."""
     existing_product = session.get(Products, p_id)
     if not existing_product:
@@ -149,7 +138,7 @@ def update_product(
 
 
 # @app.get("/products/{p_id}")
-# def get_product(p_id: int, session: Session = Depends(get_session)):
+# def get_product(p_id: int, session: SessionType):
 #     """
 #     Get a specific product by ID.
 #     """
@@ -160,7 +149,7 @@ def update_product(
 
 
 @app.get("/stores")
-def get_stores(session: Session = Depends(get_session)):
+def get_stores(session: SessionType):
     """
     Get all stores.
     """
@@ -169,7 +158,7 @@ def get_stores(session: Session = Depends(get_session)):
 
 
 @app.post("/stores")
-def bulk_create_stores(stores: List[Stores], session: Session = Depends(get_session)):
+def bulk_create_stores(stores: List[Stores], session: SessionType):
     """
     Create stores in bulk.
     This endpoint expects a list of Stores.
@@ -189,7 +178,7 @@ def bulk_create_stores(stores: List[Stores], session: Session = Depends(get_sess
 
 
 @app.get("/workshops")
-def get_workshops(session: Session = Depends(get_session)):
+def get_workshops(session: SessionType):
     """
     Get all workshops.
     """
@@ -198,9 +187,7 @@ def get_workshops(session: Session = Depends(get_session)):
 
 
 @app.post("/workshops")
-def bulk_create_workshops(
-    workshops: List[Workshops], session: Session = Depends(get_session)
-):
+def bulk_create_workshops(workshops: List[Workshops], session: SessionType):
     """
     Create workshops in bulk.
     This endpoint expects a list of Workshops.
@@ -220,7 +207,7 @@ def bulk_create_workshops(
 
 
 @app.get("/transportlinks")
-def get_transportlinks(session: Session = Depends(get_session)):
+def get_transportlinks(session: SessionType):
     """
     Get all transport links.
     """
@@ -230,7 +217,7 @@ def get_transportlinks(session: Session = Depends(get_session)):
 
 @app.post("/transportlinks")
 def bulk_create_transportlinks(
-    transportlinks: List[TransportLinks], session: Session = Depends(get_session)
+    transportlinks: List[TransportLinks], session: SessionType
 ):
     """
     Create transport links in bulk.
@@ -251,7 +238,7 @@ def bulk_create_transportlinks(
 
 
 @app.get("/procurements")
-def get_procurements(session: Session = Depends(get_session)):
+def get_procurements(session: SessionType):
     """
     Get all procurements.
     """
@@ -260,9 +247,7 @@ def get_procurements(session: Session = Depends(get_session)):
 
 
 @app.post("/procurements")
-def bulk_create_procurements(
-    procurements: List[Procurements], session: Session = Depends(get_session)
-):
+def bulk_create_procurements(procurements: List[Procurements], session: SessionType):
     """
     Create procurements in bulk.
     This endpoint expects a list of Procurements.
@@ -282,7 +267,7 @@ def bulk_create_procurements(
 
 
 @app.get("/demandpredictions")
-def get_demandpredictions(session: Session = Depends(get_session)):
+def get_demandpredictions(session: SessionType):
     """
     Get all demand predictions.
     """
@@ -292,7 +277,7 @@ def get_demandpredictions(session: Session = Depends(get_session)):
 
 @app.post("/demandpredictions")
 def bulk_create_demandpredictions(
-    demandpredictions: List[DemandPredictions], session: Session = Depends(get_session)
+    demandpredictions: List[DemandPredictions], session: SessionType
 ):
     """
     Create demand predictions in bulk.
@@ -313,7 +298,7 @@ def bulk_create_demandpredictions(
 
 
 @app.get("/sales")
-def get_sales(session: Session = Depends(get_session)):
+def get_sales(session: SessionType):
     """
     Get all sales.
     """
@@ -322,7 +307,7 @@ def get_sales(session: Session = Depends(get_session)):
 
 
 @app.post("/sales")
-def bulk_create_sales(sales: List[Sales], session: Session = Depends(get_session)):
+def bulk_create_sales(sales: List[Sales], session: SessionType):
     """
     Create sales in bulk.
     This endpoint expects a list of Sales.
@@ -342,7 +327,7 @@ def bulk_create_sales(sales: List[Sales], session: Session = Depends(get_session
 
 
 @app.get("/promotions")
-def get_promotions(session: Session = Depends(get_session)):
+def get_promotions(session: SessionType):
     """
     Get all promotions.
     """
@@ -351,9 +336,7 @@ def get_promotions(session: Session = Depends(get_session)):
 
 
 @app.post("/promotions")
-def bulk_create_promotions(
-    promotions: List[Promotions], session: Session = Depends(get_session)
-):
+def bulk_create_promotions(promotions: List[Promotions], session: SessionType):
     """Create promotions in bulk.
     This endpoint expects a list of Products.
     If no promotions are provided, it raises a 400 error.
@@ -372,7 +355,7 @@ def bulk_create_promotions(
 
 
 @app.get("/stocks")
-def get_stocks(session: Session = Depends(get_session)):
+def get_stocks(session: SessionType):
     """
     Get all stocks.
     """
@@ -381,7 +364,7 @@ def get_stocks(session: Session = Depends(get_session)):
 
 
 @app.post("/stocks")
-def bulk_create_stocks(stocks: List[Stocks], session: Session = Depends(get_session)):
+def bulk_create_stocks(stocks: List[Stocks], session: SessionType):
     """
     Create stocks in bulk.
     This endpoint expects a list of Stocks.
@@ -401,7 +384,7 @@ def bulk_create_stocks(stocks: List[Stocks], session: Session = Depends(get_sess
 
 
 @app.get("/events")
-def get_events(session: Session = Depends(get_session)):
+def get_events(session: SessionType):
     """
     Get all events.
     """
@@ -410,7 +393,7 @@ def get_events(session: Session = Depends(get_session)):
 
 
 @app.post("/events")
-def bulk_create_events(events: List[Events], session: Session = Depends(get_session)):
+def bulk_create_events(events: List[Events], session: SessionType):
     """
     Create events in bulk.
     This endpoint expects a list of Events.
@@ -430,7 +413,7 @@ def bulk_create_events(events: List[Events], session: Session = Depends(get_sess
 
 
 @app.get("/eventstores")
-def get_eventstores(session: Session = Depends(get_session)):
+def get_eventstores(session: SessionType):
     """
     Get all event stores.
     """
@@ -439,9 +422,7 @@ def get_eventstores(session: Session = Depends(get_session)):
 
 
 @app.post("/eventstores")
-def bulk_create_eventstores(
-    eventstores: List[EventStores], session: Session = Depends(get_session)
-):
+def bulk_create_eventstores(eventstores: List[EventStores], session: SessionType):
     """
     Create event stores in bulk.
     This endpoint expects a list of EventStores.
