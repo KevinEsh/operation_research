@@ -1,24 +1,22 @@
 # get the list of models
 import sys
 from datetime import date, timedelta
-from os import getcwd, listdir
-from os.path import abspath, join
+from pathlib import Path
+from typing import List
 
 import click
-import joblib
 import polars as pl
+import polars.selectors as cs
 
-sys.path.append(abspath(join(getcwd(), "..")))
-from shared.forecasters import DirectMultihorizonForecaster
+# Agregar el directorio padre (services) al path
+current_file = Path(__file__)
+services_dir = current_file.parent.parent
+sys.path.insert(0, str(services_dir))
 
-MODELS_PATH = "./models"
-
-
-def get_latest_model() -> DirectMultihorizonForecaster:
-    models = sorted([f for f in listdir(MODELS_PATH) if f.endswith(".pkl")], reverse=True)
-
-    path_to_latest_model = models[0] if models else None
-    return joblib.load(join(MODELS_PATH, path_to_latest_model))
+try:
+    from shared.s3config import get_s3_params, pull_model_from_s3
+except ImportError:
+    raise ImportError("shared.s3config module not found. Ensure the path is correct.")
 
 
 def split_by_interval(x_train, c_train, date_interval):
@@ -29,59 +27,67 @@ def split_by_interval(x_train, c_train, date_interval):
     )
 
 
-def get_single_input(today: date) -> tuple[pl.DataFrame, pl.DataFrame]:
+def get_single_input(timestamp: str) -> tuple[pl.DataFrame, pl.DataFrame]:
     """
     Load the training data for the demand prediction.
     """
+    s3_path, s3_storage_options = get_s3_params(timestamp)
 
-    x_train = pl.read_parquet("../../data/favorita_dataset/output/train_input.parquet")
-    c_train = pl.read_parquet("../../data/favorita_dataset/output/train_dates.parquet")
-    # y_train = pl.read_parquet("../../data/favorita_dataset/output/train_target.parquet")
-    # TODO: remove this when the data pipeline is fixed
-    x_train = x_train.with_columns(pl.col.product_group.cast(pl.Categorical))
+    x_train = pl.read_parquet(s3_path + "/train_input.parquet", storage_options=s3_storage_options)
+    c_train = pl.read_parquet(s3_path + "/train_dates.parquet", storage_options=s3_storage_options)
 
-    return split_by_interval(x_train, c_train, (today, today))
+    date_interval = (date.fromisoformat(timestamp), date.fromisoformat(timestamp))
+    return split_by_interval(x_train, c_train, date_interval)
 
 
-def run_prediction(today: str) -> None:
-    today = date.fromisoformat(today)
-
+def run_prediction(today: str, s3_model_path: str) -> None:
     x_input = get_single_input(today)
-    demand_predictor = get_latest_model()
+    demand_predictor = pull_model_from_s3(s3_model_path)
 
     inverse_transform = (pl.all().exp() - 1).round().cast(pl.Int32)
     df_demand_predictions = demand_predictor.predict(x_input).with_columns(inverse_transform)
 
-    prediction_range = [today + timedelta(days=h) for h in range(1, demand_predictor.horizons + 1)]
+    prediction_range = [
+        date.fromisoformat(today) + timedelta(days=h)
+        for h in range(1, demand_predictor.horizons + 1)
+    ]
 
-    return x_input.select(
+    df_demand_predictions = x_input.select(
         pl.col.product_id.alias("dp_p_id"),
         pl.col.store_id.alias("dp_s_id"),
         pl.lit(prediction_range).alias("dp_date"),
         pl.concat_list(df_demand_predictions).alias("dp_mean"),
     ).explode("dp_date", "dp_mean")
 
+    # print(df_demand_predictions)
+    s3_dp_path = save_predictions(df_demand_predictions, today)
+    return s3_dp_path
 
-def save_predictions(predictions: pl.DataFrame, today: str) -> None:
+
+def save_predictions(df_demand_predictions: pl.DataFrame, timestamp: str) -> None:
     """
     Save the predictions to a Parquet file.
     """
-    output_path = f"../dbcore/data/demandpredictions_{today.replace('-', '')}.parquet"
-    predictions.write_parquet(output_path, compression="snappy", row_group_size=1000000)
-    print(f"Predictions saved to {output_path}")
+    s3_path, s3_storage_options = get_s3_params(timestamp)
+    s3_demand_predictions_path = s3_path + "/demand_predictions.parquet"
+    df_demand_predictions.write_parquet(
+        s3_demand_predictions_path, storage_options=s3_storage_options
+    )
+    return s3_demand_predictions_path
 
 
 @click.command()
 @click.option("--today", default="2016-08-15", help="The date for which to run the prediction.")
-def main(today: str) -> None:
+@click.option(
+    "--s3_model_path",
+    default="s3://mlflow/artifacts/2016-08-15/demand_forecaster.pkl",
+    help="S3 path to the model.",
+)
+def cli_run_prediction(today: str, s3_model_path: str) -> None:
     """Main function to run the demand prediction."""
-    df_demand_predictions = run_prediction(today)
-    save_predictions(df_demand_predictions, today)
+    s3_demand_predictions_path = run_prediction(today, s3_model_path)
+    print(f"Predictions saved to {s3_demand_predictions_path}")
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description="Ejecuta la predicción de demanda.")
-    # parser.add_argument("--today", type=str, default="2016-08-15", help="Fecha para la predicción (YYYY-MM-DD).")
-    # args = parser.parse_args()
-    # main(args.today)
-    main()
+    cli_run_prediction()

@@ -1,14 +1,26 @@
 # execute duckdb query and transform the result into a parquet file
+import sys
+from pathlib import Path
 from typing import List
 
 import click
 import polars as pl
+import polars.selectors as cs
 
-SNAPSHOTS_PATH = "../dbcore/data/snapshots/"
-FEATURE_STORE_PATH = "../dbcore/data/feature_store/"
+# Agregar el directorio padre (services) al path
+current_file = Path(__file__)
+services_dir = current_file.parent.parent
+sys.path.insert(0, str(services_dir))
+
+try:
+    from shared.s3config import get_s3_params
+except ImportError:
+    raise ImportError("shared.s3config module not found. Ensure the path is correct.")
 
 
-def extract_target(dataset: pl.DataFrame, target_cols: List[str], agg_level: List[str]) -> pl.DataFrame:
+def extract_target(
+    dataset: pl.DataFrame, target_cols: List[str], agg_level: List[str]
+) -> pl.DataFrame:
     """
     Get target DataFrame for training.
 
@@ -49,7 +61,11 @@ def drop_columns(df: pl.DataFrame, col_names: List[str]) -> pl.DataFrame:
 
 
 def rolling_features(
-    df: pl.LazyFrame, target: str, horizon: int, agg_level: List[str], fill_nulls: bool = False
+    df: pl.LazyFrame,
+    target: str,
+    horizon: int,
+    agg_level: List[str],
+    fill_nulls: bool = False,
 ) -> pl.LazyFrame:
     """
     Feature engineering for sales data.
@@ -110,7 +126,7 @@ def rolling_features(
     #     )
 
     # 5. Add yearly rolling ewm. e.i. ewm of the same day in the past 3 years
-    feature_name = "ewm_3y_{target}"
+    feature_name = f"ewm_3y_{target}"
 
     tmp = (
         df.rolling("c_date", period="3y", closed="right", group_by=agg_level + ["dayofyear"])
@@ -123,7 +139,9 @@ def rolling_features(
 
     for h in range(1, horizon + 1):
         df = df.join(
-            tmp.select(*agg_level, f"h{h}_c_date", feature_name).rename({feature_name: f"h{h}_{feature_name}"}),
+            tmp.select(*agg_level, f"h{h}_c_date", feature_name).rename(
+                {feature_name: f"h{h}_{feature_name}"}
+            ),
             left_on=agg_level + ["c_date"],
             right_on=agg_level + [f"h{h}_c_date"],
             how="left",
@@ -134,6 +152,8 @@ def rolling_features(
     #     df = df.fill_null(0)
 
     # 9. Filter by date range
+    df = df.with_columns(cs.string().cast(pl.Categorical))
+
     return df.sort(by=["product_id", "store_id", "c_date"])
 
 
@@ -160,46 +180,88 @@ def save_parquet(df: pl.DataFrame, path: str):
     )
 
 
-def run_feature_engineering(
-    dataset: pl.DataFrame,
-    target: str,
-    horizon: int,
-    agg_level: List[str],
-):
-    target_cols = [f"h{h}_{target}" for h in range(1, horizon + 1)]
-    df_train_target = extract_target(dataset, target_cols, agg_level)
+def save_parquet_to_s3(df: pl.DataFrame, s3_file_path: str, storage_options: dict):
+    # choossing the best compression for a LightGBM model
+    df.write_parquet(
+        file=s3_file_path,
+        compression="zstd",
+        storage_options=storage_options,
+        # row_group_size=1000000,  # Uncomment if you need to optimize for large datasets
+        # partition_by=["store_id", "product_id"],  # Uncomment if you want to optimize
+    )
 
-    # Remove target columns from dataset
-    drop_columns(dataset, target_cols)
+
+def run_feature_engineering(s3_snapshot_path: str, target: str, horizon: int, timestamp: str):
+    s3_path, s3_storage_options = get_s3_params(timestamp)
+    df_train_snapshot = pl.read_parquet(s3_snapshot_path, storage_options=s3_storage_options)
+
+    # Get a dataframe with target variables
+    agg_level = ["product_id", "store_id"]
+    target_cols = [f"h{h}_{target}" for h in range(1, horizon + 1)]
+    df_train_target = extract_target(df_train_snapshot, target_cols, agg_level)
+
+    # Remove target columns from df_train_snapshot
+    drop_columns(df_train_snapshot, target_cols)
 
     # Apply feature engineering
-    df_train_input = rolling_features(dataset, target, horizon, agg_level)
+    df_train_input = rolling_features(df_train_snapshot, target, horizon, agg_level)
     df_train_dates = pop_columns(df_train_input, ["c_date"])
 
     # Save the final datasets
-    save_parquet(df_train_input, FEATURE_STORE_PATH + "train_input.parquet")
-    save_parquet(df_train_target, FEATURE_STORE_PATH + "train_target.parquet")
-    save_parquet(df_train_dates, FEATURE_STORE_PATH + "train_dates.parquet")
+    input_path = s3_path + "/train_input.parquet"
+    target_path = s3_path + "/train_target.parquet"
+    dates_path = s3_path + "/train_dates.parquet"
+
+    save_parquet_to_s3(df_train_input, input_path, s3_storage_options)
+    save_parquet_to_s3(df_train_target, target_path, s3_storage_options)
+    save_parquet_to_s3(df_train_dates, dates_path, s3_storage_options)
+
+    return input_path, target_path, dates_path
+
+
+def run_feature_engineering_dev(
+    file_path: str,
+    target: str,
+    horizon: int,
+    timestamp: str,
+):
+    # Load the snapshot data
+    df_train_snapshot = pl.read_parquet(file_path)
+
+    # Get a dataframe with target variables
+    agg_level = ["product_id", "store_id"]
+    target_cols = [f"h{h}_{target}" for h in range(1, horizon + 1)]
+    df_train_target = extract_target(df_train_snapshot, target_cols, agg_level)
+
+    # Remove target columns from df_train_snapshot
+    drop_columns(df_train_snapshot, target_cols)
+
+    # Apply feature engineering
+    df_train_input = rolling_features(df_train_snapshot, target, horizon, agg_level)
+    df_train_dates = pop_columns(df_train_input, ["c_date"])
+
+    # Save the final datasets
+    save_parquet(df_train_input, f"{timestamp}/train_input.parquet")
+    save_parquet(df_train_target, f"{timestamp}/train_target.parquet")
+    save_parquet(df_train_dates, f"{timestamp}/train_dates.parquet")
 
     return
 
 
 @click.command()
-# @click.option("--today", default="2016-08-15", help="Start date for training data.")
+@click.option(
+    "--file_path",
+    default="../dbcore/data/snapshots/train_snapshot.parquet",
+    help="Path to the training snapshot data.",
+)
 @click.option("--target", default="log_units_sold", help="Target variable for prediction.")
 @click.option("--horizon", default=7, help="Number of days to predict.")
-def cli_run_feature_engineering(target: str, horizon: int):
-    """
-    Main function to run the feature engineering pipeline.
-    """
-
-    # Load the snapshot data
-    df_train_snapshot = pl.read_parquet(SNAPSHOTS_PATH + "train_snapshot.parquet")
-    agg_level = ["product_id", "store_id"]  # Ensure agg_level is a list of strings
-
-    # Run feature engineering
-    run_feature_engineering(df_train_snapshot, target, horizon, agg_level)
-    return
+@click.option("--timestamp", default="2016-08-15", help="Timestamp for the snapshot.")
+def cli_run_feature_engineering(file_path, target: str, horizon: int, timestamp: str) -> None:
+    if file_path.startswith("s3://"):
+        run_feature_engineering(file_path, target, horizon, timestamp)
+    else:
+        run_feature_engineering_dev(file_path, target, horizon, timestamp)
 
 
 if __name__ == "__main__":

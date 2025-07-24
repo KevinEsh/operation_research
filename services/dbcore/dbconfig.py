@@ -1,9 +1,11 @@
 from os import environ
 from typing import Annotated, Any, Generator
 
+from dotenv import load_dotenv
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine
 
+load_dotenv("../../.env")
 # check if the database file exists
 # If not, it will be created when the first table is created
 DATABASE_SERVER = environ.get("DATABASE_SERVER", "duckdb")

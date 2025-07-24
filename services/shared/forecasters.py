@@ -7,6 +7,22 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 PolarsType = TypeVar("DataFrame")
 
 
+def parse_fit_params(fit_params: dict):
+    """Parse fit parameters for LightGBM."""
+    if fit_params is None:
+        return {}
+    if isinstance(fit_params, dict):
+        fit_params["callbacks"] = []
+        if "early_stopping_rounds" in fit_params:
+            fit_params["callbacks"].append(
+                lgbm.early_stopping(fit_params.pop("early_stopping_rounds"))
+            )
+        if "log_evaluation" in fit_params:
+            fit_params["callbacks"].append(lgbm.log_evaluation(fit_params.pop("log_evaluation")))
+        return fit_params
+    raise ValueError("fit_params must be a dictionary.")
+
+
 class DirectMultihorizonForecaster(BaseEstimator, RegressorMixin):
     def __init__(self, horizons: int, params=None):
         """Construct a gradient boosting model.
@@ -150,7 +166,7 @@ class DirectMultihorizonForecaster(BaseEstimator, RegressorMixin):
         self.base_regressor = lgbm.LGBMRegressor(**self.params)
         self.horizons = horizons
         self.models_ = []
-        self.is_fitted_ = False
+        self.is_fitted = False
         self.target_names_ = None
 
     def fit(self, X: PolarsType, Y: PolarsType, fit_params=None, target_cols=None):
@@ -168,7 +184,7 @@ class DirectMultihorizonForecaster(BaseEstimator, RegressorMixin):
         # callbacks: Optional[List[Callable]] = None,
         # init_model: Optional[Union[str, Path, Booster, LGBMModel]] = None,
 
-        self.fit_params = fit_params if fit_params is not None else {}
+        self.fit_params = parse_fit_params(fit_params)
         self.target_cols_ = Y.columns if target_cols is None else target_cols
 
         # For direct approach, Y should contain multiple columns, each representing a different horizon.
@@ -184,14 +200,15 @@ class DirectMultihorizonForecaster(BaseEstimator, RegressorMixin):
         # Fit each model for each horizon
         for h in range(self.horizons):
             y_h = Y.get_column(self.target_cols_[h]).to_numpy()
+            self.fit_params["eval_set"] = [(X, y_h)]
             self.models_[h].fit(X, y_h, **self.fit_params)
 
-        self.is_fitted_ = True
+        self.is_fitted = True
         return self
 
     def predict(self, X: PolarsType):
         """Predict using the fitted models for each horizon."""
-        if not self.is_fitted_:
+        if not self.is_fitted:
             raise RuntimeError("You must fit the model before calling predict.")
 
         X = X.to_pandas()
@@ -212,10 +229,8 @@ class DirectMultihorizonForecaster(BaseEstimator, RegressorMixin):
             The type of feature importance to be returned.
             Can be 'split' or 'gain'.
         """
-        if not self.is_fitted_:
-            raise RuntimeError(
-                "You must fit the model before calling feature_importances_."
-            )
+        if not self.is_fitted:
+            raise RuntimeError("You must fit the model before calling feature_importances_.")
 
         return DataFrame(
             {"feature_name": self.models_[0].feature_name_}

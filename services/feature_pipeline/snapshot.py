@@ -1,5 +1,4 @@
 query_snapshot = """
--- CREATE TABLE train_snapshot AS
 with sales_snapshot as (
   select 
     sa_date as dt, 
@@ -9,23 +8,23 @@ with sales_snapshot as (
     p_group as pg,
     not (pr_id is null) as iop,
     ln(sa_units_sold + 1) as lus
-  from core.sales
-  left join core.eventstores on
+  from sales
+  left join eventstores on
     sa_date = es_date and sa_s_id = es_s_id
   left join promotions on
     sa_date = pr_date and sa_p_id = pr_p_id and sa_s_id = pr_s_id
   left join products on
     sa_p_id = p_id
 ),
-lag_sales as (
-  select 
-    c_date + 1 as l1d_dt,
-    c_date + 2 as l2d_dt,
-    product_id,
-    store_id,
-    units_sold
-  from sales_snapshot
-),
+-- lag_sales as (
+--   select 
+--     dt + 1 as l1d_dt,
+--     dt + 2 as l2d_dt,
+--     product_id,
+--     store_id,
+--     units_sold
+--   from sales_snapshot
+-- ),
 next_sales as (
   select
     pid,
@@ -39,7 +38,7 @@ next_sales as (
     dt - 4 as n4d_dt,
     dt - 5 as n5d_dt,
     dt - 6 as n6d_dt,
-    dt - 7 as n7d_dt,
+    dt - 7 as n7d_dt
   from sales_snapshot as ss
 ),
 sales_featured as (
@@ -69,7 +68,7 @@ sales_featured as (
     n4d.lus as h4_log_units_sold,
     n5d.lus as h5_log_units_sold,
     n6d.lus as h6_log_units_sold, 
-    n7d.lus as h7_log_units_sold, 
+    n7d.lus as h7_log_units_sold
     -- l1d.units_sold,
     -- l2d.units_sold
   from sales_snapshot as ss
@@ -94,5 +93,5 @@ select *
 from sales_featured
 where 1=1
   and c_date between '{date_from}' and '{date_upto}'
-order by product_id, store_id, c_date;
+order by product_id, store_id, c_date
 """
