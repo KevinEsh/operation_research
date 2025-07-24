@@ -1,10 +1,6 @@
 from os import environ
 
 from dotenv import load_dotenv
-from joblib import dump, load
-from s3fs import S3FileSystem
-
-from shared.forecasters import DirectMultihorizonForecaster
 
 load_dotenv("../../.env")
 
@@ -42,29 +38,6 @@ def get_s3_model_storage(timestamp: str):
         },
     }
     return s3_path, s3_storage_options
-
-
-def push_model_to_s3(forecaster: DirectMultihorizonForecaster, timestamp: str) -> None:
-    s3_models_path, s3_model_storage_config = get_s3_model_storage(timestamp)
-    s3_model_path = s3_models_path + "/demand_forecaster.pkl"
-
-    # Guardar el modelo en S3 usando s3fs
-    fs = S3FileSystem(**s3_model_storage_config)
-    with fs.open(s3_model_path, "wb") as f:
-        dump(forecaster, f)
-
-    return s3_model_path
-
-
-def pull_model_from_s3(s3_model_path: str) -> DirectMultihorizonForecaster:
-    """
-    Pull the model from S3 and return it.
-    """
-    _, s3_model_storage_config = get_s3_model_storage("")
-    fs = S3FileSystem(**s3_model_storage_config)
-    with fs.open(s3_model_path, "rb") as f:
-        forecaster = load(f)
-    return forecaster
 
 
 # def get_latest_model() -> DirectMultihorizonForecaster:

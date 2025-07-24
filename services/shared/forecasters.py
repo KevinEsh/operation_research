@@ -2,7 +2,10 @@ from typing import TypeVar
 
 import lightgbm as lgbm
 from polars import DataFrame
+from s3fs import S3FileSystem
 from sklearn.base import BaseEstimator, RegressorMixin, clone
+
+from shared.s3config import get_s3_model_storage
 
 PolarsType = TypeVar("DataFrame")
 
@@ -239,3 +242,30 @@ class DirectMultihorizonForecaster(BaseEstimator, RegressorMixin):
                 for horizon, model in enumerate(self.models_)
             }
         )
+
+
+def push_model_to_s3(forecaster: DirectMultihorizonForecaster, timestamp: str) -> None:
+    from joblib import dump
+
+    s3_models_path, s3_model_storage_config = get_s3_model_storage(timestamp)
+    s3_model_path = s3_models_path + "/demand_forecaster.pkl"
+
+    # Guardar el modelo en S3 usando s3fs
+    fs = S3FileSystem(**s3_model_storage_config)
+    with fs.open(s3_model_path, "wb") as f:
+        dump(forecaster, f)
+
+    return s3_model_path
+
+
+def pull_model_from_s3(s3_model_path: str) -> DirectMultihorizonForecaster:
+    """
+    Pull the model from S3 and return it.
+    """
+    from joblib import load
+
+    _, s3_model_storage_config = get_s3_model_storage("")
+    fs = S3FileSystem(**s3_model_storage_config)
+    with fs.open(s3_model_path, "rb") as f:
+        forecaster = load(f)
+    return forecaster

@@ -1,8 +1,20 @@
+import sys
+from pathlib import Path
+
 import click
-import duckdb
 import polars as pl
 from ortools.sat.python import cp_model
-from queries import query_current_stocks, query_periods, query_procurements
+
+# Agregar el directorio padre (services) al path
+current_file = Path(__file__)
+services_dir = current_file.parent.parent
+sys.path.insert(0, str(services_dir))
+
+try:
+    from shared.dboperators import upload_json
+    from shared.s3config import get_postgres_uri
+except ImportError:
+    raise ImportError("shared.s3config module not found. Ensure the path is correct.")
 
 
 def polars_to_dict(df, key_cols, value_col):
@@ -20,7 +32,9 @@ def empty_dict_from_polars(df, key_cols=None):
     return {tuple(row): None for row in zip(*[df[col] for col in key_cols])}
 
 
-def solution_to_df(solution_dict, key_schema: list[tuple[str, type]], value_schema: tuple[str, type]):
+def solution_to_df(
+    solution_dict, key_schema: list[tuple[str, type]], value_schema: tuple[str, type]
+):
     """
     Convert a solution dictionary to a Polars DataFrame.
     solution_dict: dictionary with keys as tuples and values as integers.
@@ -45,6 +59,29 @@ def get_solver_solutions(solver, var_dict):
     return {keys: solver.Value(var_dict[keys]) for keys in var_dict.keys()}
 
 
+def get_input_data_dev(today: str, procurement_window: int):
+    """
+    Fetches the input data for the fulfillment model.
+    Args:
+        today (str): The current date in 'YYYY-MM-DD' format.
+        procurement_window (int): The number of days to consider for procurement.
+    Returns:
+        tuple: DataFrames for periods, procurements, and current stocks.
+    """
+    import duckdb
+    from queries import query_current_stocks, query_periods, query_procurements
+
+    with duckdb.connect("../dbcore/data/core.db") as con:
+        df_periods = con.execute(
+            query_periods.format(date_from=today, window=procurement_window)
+        ).pl()
+        df_procurements = con.execute(
+            query_procurements.format(date_from=today, window=procurement_window)
+        ).pl()
+        df_current_stocks = con.execute(query_current_stocks.format(date_from=today)).pl()
+    return df_periods, df_procurements, df_current_stocks
+
+
 def get_input_data(today: str, procurement_window: int):
     """
     Fetches the input data for the fulfillment model.
@@ -54,10 +91,22 @@ def get_input_data(today: str, procurement_window: int):
     Returns:
         tuple: DataFrames for periods, procurements, and current stocks.
     """
-    with duckdb.connect("../dbcore/data/core.db") as con:
-        df_periods = con.execute(query_periods.format(date_from=today, window=procurement_window)).pl()
-        df_procurements = con.execute(query_procurements.format(date_from=today, window=procurement_window)).pl()
-        df_current_stocks = con.execute(query_current_stocks.format(date_from=today)).pl()
+
+    # Execute the query against the PostgreSQL database and get the polars DataFrame
+    from queries import query_current_stocks, query_periods, query_procurements
+
+    query_periods = query_periods.format(date_from=today, window=procurement_window)
+    df_periods = pl.read_database_uri(query=query_periods, uri=get_postgres_uri())
+    print(df_periods)
+
+    query_procurements = query_procurements.format(date_from=today, window=procurement_window)
+    df_procurements = pl.read_database_uri(query=query_procurements, uri=get_postgres_uri())
+    print(df_procurements)
+
+    query_current_stocks = query_current_stocks.format(date_from=today)
+    df_current_stocks = pl.read_database_uri(query=query_current_stocks, uri=get_postgres_uri())
+    print(df_current_stocks)
+
     return df_periods, df_procurements, df_current_stocks
 
 
@@ -87,14 +136,18 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
 
     # Create variables for demand predictions, met demand, unmet demand.
     # These are the expected demand predictions for each product, store, and time period.
-    demand_predictions = polars_to_dict(df_procurements, key_cols=agg_level, value_col="pred_units_sold")
+    demand_predictions = polars_to_dict(
+        df_procurements, key_cols=agg_level, value_col="pred_units_sold"
+    )
     met_demand = demand_predictions.copy()
     unmet_demand = demand_predictions.copy()
     for p, s, t in demand_predictions.keys():
         met_demand[p, s, t] = model.new_int_var(0, 1000, f"met_demand_{p}_{s}_{t}")
         unmet_demand[p, s, t] = model.new_int_var(0, 1000, f"unmet_demand_{p}_{s}_{t}")
 
-    current_stocks = polars_to_dict(df_current_stocks, key_cols=["p_id", "s_id"], value_col="ending_inventory")
+    current_stocks = polars_to_dict(
+        df_current_stocks, key_cols=["p_id", "s_id"], value_col="ending_inventory"
+    )
     expected_stocks = empty_dict_from_polars(df_procurements, agg_level)
     overstocks = expected_stocks.copy()
     understocks = expected_stocks.copy()
@@ -118,7 +171,7 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         # # new orders should be at least the unmet demand
         # model.add(new_orders[p,s,t] >= unmet_demand[p,s,t])
 
-    max_capacity = 100
+    max_capacity = 120
     overstock_level = 80
     understock_level = 70
     safety_stocks = 30
@@ -152,8 +205,12 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
 
     objective_terms = []
     objective_terms.extend([unmet_penalty * ud_var for ud_var in unmet_demand.values()])
-    objective_terms.extend([overstock_penalty * overstock_var for overstock_var in overstocks.values()])
-    objective_terms.extend([understock_penalty * understock_var for understock_var in understocks.values()])
+    objective_terms.extend(
+        [overstock_penalty * overstock_var for overstock_var in overstocks.values()]
+    )
+    objective_terms.extend(
+        [understock_penalty * understock_var for understock_var in understocks.values()]
+    )
 
     # This is the objective function to minimize the total cost
     # of unmet demand, overstock, and understock
@@ -186,11 +243,15 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     )
 
     df_expected_stocks = solution_to_df(
-        expected_stocks_solution, key_schema=agg_level_schema, value_schema=("ending_inventory", pl.Int32)
+        expected_stocks_solution,
+        key_schema=agg_level_schema,
+        value_schema=("ending_inventory", pl.Int32),
     )
 
     df_new_orders = solution_to_df(
-        new_orders_solution, key_schema=agg_level_schema, value_schema=("recommended_orders", pl.Int32)
+        new_orders_solution,
+        key_schema=agg_level_schema,
+        value_schema=("recommended_orders", pl.Int32),
     )
 
     return (
@@ -228,7 +289,7 @@ def save_output(df_output, output_path: str = "../dbcore/data/fulfillment_output
 
 
 @click.command()
-@click.option("--today", default="2016-08-14", help="Current date in 'YYYY-MM-DD' format.")
+@click.option("--today", default="2016-08-15", help="Current date in 'YYYY-MM-DD' format.")
 @click.option("--procurement_window", default=7, help="Number of days to consider for procurement.")
 def main(today, procurement_window):
     df_output = run_fulfillment(today, procurement_window)

@@ -1,4 +1,4 @@
-query_periods = """
+query_periods_dev = """
 SELECT
     CAST(d AS DATE) AS c_date,
     ROW_NUMBER() OVER (ORDER BY d) AS c_rank
@@ -7,6 +7,17 @@ FROM generate_series(
     DATE '{date_from}' + INTERVAL {window} DAY, 
     INTERVAL 1 DAY
 ) AS t(d)
+"""
+
+query_periods = """
+SELECT
+    d::date AS c_date,
+    ROW_NUMBER() OVER (ORDER BY d) AS c_rank
+FROM generate_series(
+    DATE '{date_from}' + INTERVAL '1 day',
+    DATE '{date_from}' + INTERVAL '7 day',
+    INTERVAL '1 day'
+) AS d
 """
 
 query_procurements = f"""
@@ -40,7 +51,8 @@ SELECT
     sk_p_id as p_id, 
     sk_s_id as s_id, 
     0 as c_rank, 
-    sk_units as ending_inventory,
+    sk_units as ending_inventory
 FROM stocks
-WHERE sk_date == DATE '{date_from}'
+WHERE sk_date = '{date_from}'
+ORDER BY p_id, s_id
 """

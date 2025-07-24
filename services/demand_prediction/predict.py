@@ -2,11 +2,9 @@
 import sys
 from datetime import date, timedelta
 from pathlib import Path
-from typing import List
 
 import click
 import polars as pl
-import polars.selectors as cs
 
 # Agregar el directorio padre (services) al path
 current_file = Path(__file__)
@@ -14,6 +12,7 @@ services_dir = current_file.parent.parent
 sys.path.insert(0, str(services_dir))
 
 try:
+    from shared.dboperators import upload_json
     from shared.s3config import get_s3_params, pull_model_from_s3
 except ImportError:
     raise ImportError("shared.s3config module not found. Ensure the path is correct.")
@@ -59,8 +58,9 @@ def run_prediction(today: str, s3_model_path: str) -> None:
         pl.concat_list(df_demand_predictions).alias("dp_mean"),
     ).explode("dp_date", "dp_mean")
 
-    # print(df_demand_predictions)
+    upload_json(df_demand_predictions.to_dicts(), "demandpredictions")
     s3_dp_path = save_predictions(df_demand_predictions, today)
+
     return s3_dp_path
 
 

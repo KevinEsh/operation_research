@@ -184,7 +184,7 @@ def save_parquet_to_s3(df: pl.DataFrame, s3_file_path: str, storage_options: dic
     # choossing the best compression for a LightGBM model
     df.write_parquet(
         file=s3_file_path,
-        compression="zstd",
+        # compression="zstd",
         storage_options=storage_options,
         # row_group_size=1000000,  # Uncomment if you need to optimize for large datasets
         # partition_by=["store_id", "product_id"],  # Uncomment if you want to optimize
