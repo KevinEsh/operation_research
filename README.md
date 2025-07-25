@@ -16,15 +16,15 @@ For this, Mercanova integrates the following components:
 
 - **Predict demand** at product/store/day granularity using sales, promotions, events, and seasonality features  
 - **Optimize replenishment & fulfillment** strategies that minimize shipping costs, overstocks, understocks while maximizing demand satisfaction
-- **Head Operations UI dashboards** for insights into demand patterns, inventory levels, and fulfillment performance
-- **Standardized & Intuitive APIs** for easy integration with existing retail systems (ERP, POS, WMS)
+- **Central Console** filled with dashboards for insights into sales patterns, inventory levels, and fulfillment performance
+- **Standarized & Intuitive APIs** for just plug-and-play with your retail data
 - **Data Pipeline** for efficient ETL/ELT operations, feature engineering, and model training
 - **Monitoring & Alerting** for demand anomalies, fulfillment issues, and performance metrics
 - **Modular Architecture** that allows for easy extension, customization, and integration with third-party services
 - **Scalable & Cloud-Native** design that supports batch and real-time data processing
 - **User-Friendly Interface** for business users to interact with the system, view insights, and manage operations
 
-Mercanova reimagines retail operations using a *next-gen intelligence layer* that bridges predictive analytics with optimization logic.
+Mercanova tackles the complexities of retail demand and fulfillment by combining advanced machine learning techniques with mathematical optimization. It provides a comprehensive solution that not only predicts demand but also optimizes how to meet that demand efficiently.
 
 ---
 
