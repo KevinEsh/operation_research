@@ -30,15 +30,14 @@ Mercanova tackles the complexities of retail demand and fulfillment by combining
 
 ## 🎯 Project Goals
 
-- Deliver **high-fidelity demand forecasts** using time series and causal models
-- Solve **multi-objective fulfillment optimization problems** (inventory, cost, service)
-- Create a **modular and reusable backend architecture**
-- Provide a clean, extensible interface for integrations (APIs, UI, pipeline hooks)
-- Enable rapid experimentation and deployment for real-world retail scenarios
+- Deliver high-fidelity demand forecasts using time series and causal models
+- Solve multi-objective fulfillment optimization problems (inventory, cost, service)
+- Create a modular and reusable backend architecture
+- Provide a clean, extensible interface for user interaction
 
 ---
 
-## 🛠️ Tech Stack (Fill In)
+## 🛠️ Tech Stack
 
 - **Demand Prediction**: ML models fine-tuned to all store/product combinations using LightGBM to capture seasonality, promotions, and trends
 - **Fulfillment Optimization**: MILP/LP-based models that solve for constraints like demand satisfaction, max/min inventory levels, packaging restrictions, and shipping costs using the open-source solver OR-Tools
