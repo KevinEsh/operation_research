@@ -2,7 +2,7 @@
 
 *The new intelligence for retail.*
 
-**Mercanova** is an AI-native platform that empowers retail stores to predict demand accurately and optimize fulfillment operations through mathematical optimization, machine learning, and decision automation.
+**Mercanova** is an AI-native platform that empowers retail stores to predict demand accurately and optimize fulfillment operations through mathematical optimization, machine learning, and control console.
 
 Designed for precision. Built for optimization. Trusted for automatization.
 
