@@ -123,7 +123,9 @@ class TransportLinks(SQLModel, table=True):
         tl_cost (float): Cost of the transport link from workshop to store for the product.
     """
 
-    __table_args__ = (UniqueConstraint("tl_w_id", "tl_s_id", "tl_p_id", name="unique_transport_link"),)
+    __table_args__ = (
+        UniqueConstraint("tl_w_id", "tl_s_id", "tl_p_id", name="unique_transport_link"),
+    )
 
     tl_id: Optional[int] = id_field("transportlinks")
     tl_p_id: int = Field(foreign_key="products.p_id")
@@ -193,7 +195,9 @@ class DemandPredictions(SQLModel, table=True):
         dp_mean (int): Mean demand prediction value.
     """
 
-    __table_args__ = (UniqueConstraint("dp_p_id", "dp_s_id", "dp_date", name="unique_demand_prediction"),)
+    __table_args__ = (
+        UniqueConstraint("dp_p_id", "dp_s_id", "dp_date", name="unique_demand_prediction"),
+    )
 
     dp_id: Optional[int] = id_field("demandpredictions")
     dp_p_id: int = Field(foreign_key="products.p_id")
@@ -224,7 +228,11 @@ class DemandFulfillments(SQLModel, table=True):
         df_units_sent (int): Number of units sent on that date.
     """
 
-    __table_args__ = (UniqueConstraint("df_p_id", "df_s_id", "df_date", name="unique_demand_fulfillment"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "df_p_id", "df_s_id", "df_w_id", "df_date", name="unique_demand_fulfillment"
+        ),
+    )
 
     df_id: Optional[int] = id_field("demandfulfillments")
     df_p_id: int = Field(foreign_key="products.p_id")

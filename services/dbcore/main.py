@@ -4,6 +4,7 @@ from typing import List
 from dbconfig import SessionType, create_db_and_tables
 from fastapi import FastAPI, HTTPException
 from schema import (
+    DemandFulfillments,
     DemandPredictions,
     Events,
     EventStores,
@@ -216,9 +217,7 @@ def get_transportlinks(session: SessionType):
 
 
 @app.post("/transportlinks")
-def bulk_create_transportlinks(
-    transportlinks: List[TransportLinks], session: SessionType
-):
+def bulk_create_transportlinks(transportlinks: List[TransportLinks], session: SessionType):
     """
     Create transport links in bulk.
     This endpoint expects a list of TransportLinks.
@@ -276,9 +275,7 @@ def get_demandpredictions(session: SessionType):
 
 
 @app.post("/demandpredictions")
-def bulk_create_demandpredictions(
-    demandpredictions: List[DemandPredictions], session: SessionType
-):
+def bulk_create_demandpredictions(demandpredictions: List[DemandPredictions], session: SessionType):
     """
     Create demand predictions in bulk.
     This endpoint expects a list of DemandPredictions.
@@ -295,6 +292,37 @@ def bulk_create_demandpredictions(
         raise HTTPException(status_code=400, detail=get_error_msg(error))
 
     return {"demandpredictions": [dp.dp_id for dp in demandpredictions]}
+
+
+@app.get("/demandfulfillments")
+def get_demandfulfillments(session: SessionType):
+    """
+    Get all demand predictions.
+    """
+    demandfulfillments = session.exec(select(DemandFulfillments)).all()
+    return {"demandfulfillments": demandfulfillments}
+
+
+@app.post("/demandfulfillments")
+def bulk_create_demandfulfillments(
+    demandfulfillments: List[DemandFulfillments], session: SessionType
+):
+    """
+    Create demand predictions in bulk.
+    This endpoint expects a list of Demandfulfillments.
+    If no demand predictions are provided, it raises a 400 error.
+    """
+    if not demandfulfillments:
+        raise HTTPException(status_code=400, detail="No demand fulfillments provided")
+
+    try:
+        session.add_all(demandfulfillments)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=get_error_msg(error))
+
+    return {"demandfulfillments": [df.df_id for df in demandfulfillments]}
 
 
 @app.get("/sales")

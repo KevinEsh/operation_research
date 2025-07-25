@@ -1,7 +1,7 @@
 query_periods_dev = """
 SELECT
     CAST(d AS DATE) AS c_date,
-    ROW_NUMBER() OVER (ORDER BY d) AS c_rank
+    ROW_NUMBER() OVER (ORDER BY d)::integer AS c_rank
 FROM generate_series(
     DATE '{date_from}' + INTERVAL 1 DAY, 
     DATE '{date_from}' + INTERVAL {window} DAY, 
@@ -12,7 +12,7 @@ FROM generate_series(
 query_periods = """
 SELECT
     d::date AS c_date,
-    ROW_NUMBER() OVER (ORDER BY d) AS c_rank
+    ROW_NUMBER() OVER (ORDER BY d)::integer AS c_rank
 FROM generate_series(
     DATE '{date_from}' + INTERVAL '1 day',
     DATE '{date_from}' + INTERVAL '{window} day',

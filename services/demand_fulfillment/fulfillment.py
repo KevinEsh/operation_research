@@ -11,7 +11,7 @@ services_dir = current_file.parent.parent
 sys.path.insert(0, str(services_dir))
 
 try:
-    from shared.dboperators import upload_json
+    from shared.dboperators import post_dataframe_to_api
     from shared.s3config import get_postgres_uri
 except ImportError:
     raise ImportError("shared.s3config module not found. Ensure the path is correct.")
@@ -103,23 +103,23 @@ def get_input_data(today: str, procurement_window: int):
 
     query_periods = query_periods.format(date_from=today, window=procurement_window)
     df_periods = pl.read_database_uri(query=query_periods, uri=get_postgres_uri())
-    print(df_periods)
+    # print(df_periods)
 
     query_procurements = query_procurements.format(date_from=today, window=procurement_window)
     df_procurements = pl.read_database_uri(query=query_procurements, uri=get_postgres_uri())
-    print(df_procurements)
+    # print(df_procurements)
 
     query_current_stocks = query_current_stocks.format(date_from=today)
     df_current_stocks = pl.read_database_uri(query=query_current_stocks, uri=get_postgres_uri())
-    print(df_current_stocks)
+    # print(df_current_stocks)
 
     query_transportlinks = query_transportlinks.format(date_from=today, window=procurement_window)
     df_transportlinks = pl.read_database_uri(query=query_transportlinks, uri=get_postgres_uri())
-    print(df_transportlinks)
+    # print(df_transportlinks)
 
     query_workshops = query_workshops.format(date_from=today, window=procurement_window)
     df_workshops = pl.read_database_uri(query=query_workshops, uri=get_postgres_uri())
-    print(df_workshops)
+    # print(df_workshops)
 
     return df_periods, df_procurements, df_current_stocks, df_transportlinks, df_workshops
 
@@ -131,6 +131,7 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         today (str): The current date in 'YYYY-MM-DD' format.
         procurement_window (int): The number of days to consider for procurement.
     """
+    from pprint import pprint
 
     agg_level = ["p_id", "s_id", "c_rank"]
     # Fetch input data
@@ -146,7 +147,9 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     workshop_capacities = polars_to_dict(
         df_workshops, key_cols=["w_id", "c_rank"], value_col="capacity"
     )
-    print("Workshops capacities:", workshop_capacities)
+    print("Workshops capacities:")
+    pprint(workshop_capacities)
+
     # Create variables for new orders. These is the recommended orders based on demand predictions.
     new_orders = polars_to_dict(df_procurements, key_cols=agg_level, value_col="needs_order")
     for (p, s, t), needs_order in new_orders.items():
@@ -161,6 +164,8 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     package_costs = polars_to_dict(
         df_transportlinks, key_cols=["p_id", "s_id", "w_id", "c_rank"], value_col="package_cost"
     )
+    print("Package sizes:")
+    pprint(package_sizes)
     packages_orders = package_sizes.copy()
 
     for p, s, w, t in packages_orders.keys():
@@ -200,7 +205,8 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
                 for w in workshops_ids
             )
         )
-
+    print("current stocks")
+    pprint(current_stocks)
     for w, t in workshop_capacities.keys():
         # The total number of packages ordered at workshop w at time t should not exceed its capacity
         model.add(  # TODO: de hecho tiene mas sentido expresa la capacidad como el numero de paquetes que se pueden enviar
@@ -210,6 +216,7 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
             )
             <= workshop_capacities[w, t]
         )
+        # print(f"")
 
     for p, s, t in demand_predictions.keys():
         # met demand is the sum of all orders for product p, location l, and time t
@@ -255,12 +262,12 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     unmet_penalty = 100
     overstock_penalty = 10
     understock_penalty = 12
-    package_penalty = 5
+    package_cost_penalty = 1
 
     objective_terms = []
     objective_terms.extend(
         [
-            package_penalty * package_costs[p, s, w, t] * pk_var
+            package_cost_penalty * package_costs[p, s, w, t] * pk_var
             for (p, s, w, t), pk_var in packages_orders.items()
         ]
     )
@@ -288,51 +295,94 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         print("A solution could not be found, check the problem specification")
 
     # Get the solutions
-    met_demand_solution = get_solver_solutions(solver, met_demand)
-    unmet_demand_solution = get_solver_solutions(solver, unmet_demand)
-    expected_stocks_solution = get_solver_solutions(solver, expected_stocks)
-    new_orders_solution = get_solver_solutions(solver, new_orders)
+    # met_demand_solution = get_solver_solutions(solver, met_demand)
+    # unmet_demand_solution = get_solver_solutions(solver, unmet_demand)
+    # expected_stocks_solution = get_solver_solutions(solver, expected_stocks)
+    # new_orders_solution = get_solver_solutions(solver, new_orders)
+    packages_orders_solution = get_solver_solutions(solver, packages_orders)
 
-    agg_level_schema = [("p_id", pl.Int32), ("s_id", pl.Int32), ("c_rank", pl.Int32)]
+    # agg_level_schema = [("p_id", pl.Int32), ("s_id", pl.Int32), ("c_rank", pl.Int32)]
 
-    df_met_demand = solution_to_df(
-        met_demand_solution, key_schema=agg_level_schema, value_schema=("met_demand", pl.Int32)
-    )
-    df_unmet_demand = solution_to_df(
-        unmet_demand_solution, key_schema=agg_level_schema, value_schema=("unmet_demand", pl.Int32)
-    )
-
-    df_expected_stocks = solution_to_df(
-        expected_stocks_solution,
-        key_schema=agg_level_schema,
-        value_schema=("ending_inventory", pl.Int32),
-    )
-
-    df_new_orders = solution_to_df(
-        new_orders_solution,
-        key_schema=agg_level_schema,
-        value_schema=("recommended_orders", pl.Int32),
-    )
-
-    return (
-        (
-            pl.concat([df_current_stocks, df_expected_stocks], how="vertical")
-            .with_columns(
-                pl.col("ending_inventory")
-                .shift(1)
-                .over("p_id", "s_id", order_by="c_rank")
-                .alias("initial_expected_stock")
-            )
-            .filter(pl.col("c_rank") > 0)
-            .join(df_met_demand, on=agg_level, how="left")
-            .join(df_unmet_demand, on=agg_level, how="left")
-            .join(df_new_orders, on=agg_level, how="left")
-            .join(df_periods, on="c_rank", how="left")
-            .drop("c_rank")
+    df_demand_fulfillments = (
+        solution_to_df(
+            packages_orders_solution,
+            key_schema=[
+                ("df_p_id", pl.Int32),
+                ("df_s_id", pl.Int32),
+                ("df_w_id", pl.Int32),
+                ("c_rank", pl.Int32),
+            ],
+            value_schema=("df_packages_sent", pl.Int32),
         )
-        .rename({"c_date": "date"})
-        .select(pl.all().name.prefix("pcpl_"))
+        .filter(pl.col("df_packages_sent") > 0)
+        .join(
+            df_periods,
+            on="c_rank",
+            how="left",
+        )
+        .drop("c_rank")
+        .rename({"c_date": "df_date"})
     )
+
+    print("Demand fulfillment DataFrame:")
+    # print(df_demand_fulfillments)
+    # a = (
+    #     df_demand_fulfillments.group_by(["df_w_id", "df_date"])
+    #     .agg(
+    #         pl.sum("df_packages_sent").alias("total_packages_sent"),
+    #     )
+    #     .group_by("df_w_id")
+    #     .agg(
+    #         pl.col("total_packages_sent").max().alias("max_packages_sent"),
+    #         pl.col("total_packages_sent").min().alias("min_packages_sent"),
+    #     )
+    #     .sort("df_w_id")
+    # )
+    # print(a)
+
+    # Save the output to a DuckDB database
+    post_dataframe_to_api(df_demand_fulfillments, "demandfulfillments")
+    # s3_dp_path = save_predictions(df_demand_predictions, today)
+    return
+
+    # df_met_demand = solution_to_df(
+    #     met_demand_solution, key_schema=agg_level_schema, value_schema=("met_demand", pl.Int32)
+    # )
+    # df_unmet_demand = solution_to_df(
+    #     unmet_demand_solution, key_schema=agg_level_schema, value_schema=("unmet_demand", pl.Int32)
+    # )
+
+    # df_expected_stocks = solution_to_df(
+    #     expected_stocks_solution,
+    #     key_schema=agg_level_schema,
+    #     value_schema=("ending_inventory", pl.Int32),
+    # )
+
+    # df_new_orders = solution_to_df(
+    #     new_orders_solution,
+    #     key_schema=agg_level_schema,
+    #     value_schema=("recommended_orders", pl.Int32),
+    # )
+
+    # return (
+    #     (
+    #         pl.concat([df_current_stocks, df_expected_stocks], how="vertical")
+    #         .with_columns(
+    #             pl.col("ending_inventory")
+    #             .shift(1)
+    #             .over("p_id", "s_id", order_by="c_rank")
+    #             .alias("initial_expected_stock")
+    #         )
+    #         .filter(pl.col("c_rank") > 0)
+    #         .join(df_met_demand, on=agg_level, how="left")
+    #         .join(df_unmet_demand, on=agg_level, how="left")
+    #         .join(df_new_orders, on=agg_level, how="left")
+    #         .join(df_periods, on="c_rank", how="left")
+    #         .drop("c_rank")
+    #     )
+    #     .rename({"c_date": "date"})
+    #     .select(pl.all().name.prefix("pcpl_"))
+    # )
 
 
 def save_output(df_output, output_path: str = "../dbcore/data/fulfillment_output.parquet"):
@@ -351,10 +401,10 @@ def save_output(df_output, output_path: str = "../dbcore/data/fulfillment_output
 @click.command()
 @click.option("--today", default="2016-08-15", help="Current date in 'YYYY-MM-DD' format.")
 @click.option("--procurement_window", default=7, help="Number of days to consider for procurement.")
-def main(today, procurement_window):
-    df_output = run_fulfillment(today, procurement_window)
-    save_output(df_output)
+def cli_run_fulfillment(today, procurement_window):
+    run_fulfillment(today, procurement_window)
+    # save_output(df_output)
 
 
 if __name__ == "__main__":
-    main()
+    cli_run_fulfillment()
