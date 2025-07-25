@@ -93,7 +93,13 @@ def get_input_data(today: str, procurement_window: int):
     """
 
     # Execute the query against the PostgreSQL database and get the polars DataFrame
-    from queries import query_current_stocks, query_periods, query_procurements
+    from queries import (
+        query_current_stocks,
+        query_periods,
+        query_procurements,
+        query_transportlinks,
+        query_workshops,
+    )
 
     query_periods = query_periods.format(date_from=today, window=procurement_window)
     df_periods = pl.read_database_uri(query=query_periods, uri=get_postgres_uri())
@@ -107,7 +113,15 @@ def get_input_data(today: str, procurement_window: int):
     df_current_stocks = pl.read_database_uri(query=query_current_stocks, uri=get_postgres_uri())
     print(df_current_stocks)
 
-    return df_periods, df_procurements, df_current_stocks
+    query_transportlinks = query_transportlinks.format(date_from=today, window=procurement_window)
+    df_transportlinks = pl.read_database_uri(query=query_transportlinks, uri=get_postgres_uri())
+    print(df_transportlinks)
+
+    query_workshops = query_workshops.format(date_from=today, window=procurement_window)
+    df_workshops = pl.read_database_uri(query=query_workshops, uri=get_postgres_uri())
+    print(df_workshops)
+
+    return df_periods, df_procurements, df_current_stocks, df_transportlinks, df_workshops
 
 
 def run_fulfillment(today: str, procurement_window: int) -> None:
@@ -120,12 +134,19 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
 
     agg_level = ["p_id", "s_id", "c_rank"]
     # Fetch input data
-    df_periods, df_procurements, df_current_stocks = get_input_data(today, procurement_window)
+    df_periods, df_procurements, df_current_stocks, df_transportlinks, df_workshops = (
+        get_input_data(today, procurement_window)
+    )
 
     # CP-SAT model setup
     model = cp_model.CpModel()
     solver = cp_model.CpSolver()
 
+    workshops_ids = df_workshops.unique("w_id").get_column("w_id").to_list()
+    workshop_capacities = polars_to_dict(
+        df_workshops, key_cols=["w_id", "c_rank"], value_col="capacity"
+    )
+    print("Workshops capacities:", workshop_capacities)
     # Create variables for new orders. These is the recommended orders based on demand predictions.
     new_orders = polars_to_dict(df_procurements, key_cols=agg_level, value_col="needs_order")
     for (p, s, t), needs_order in new_orders.items():
@@ -133,6 +154,17 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
             new_orders[p, s, t] = model.new_int_var(0, 1000, f"new_order_{p}_{s}_{t}")
         else:
             new_orders[p, s, t] = model.new_constant(0, f"no_order_{p}_{s}_{t}")
+
+    package_sizes = polars_to_dict(
+        df_transportlinks, key_cols=["p_id", "s_id", "w_id", "c_rank"], value_col="package_size"
+    )
+    package_costs = polars_to_dict(
+        df_transportlinks, key_cols=["p_id", "s_id", "w_id", "c_rank"], value_col="package_cost"
+    )
+    packages_orders = package_sizes.copy()
+
+    for p, s, w, t in packages_orders.keys():
+        packages_orders[p, s, w, t] = model.new_int_var(0, 1000, f"packages_order_{p}_{s}_{w}_{t}")
 
     # Create variables for demand predictions, met demand, unmet demand.
     # These are the expected demand predictions for each product, store, and time period.
@@ -158,6 +190,27 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         understocks[p, s, t] = model.new_int_var(0, 1000, f"understock_{p}_{s}_{t}")
 
     # Constraints
+
+    for p, s, t in new_orders.keys():
+        # new orders should be equal to the number of packages ordered times the package size
+        model.add(
+            new_orders[p, s, t]
+            == sum(
+                packages_orders.get((p, s, w, t), 0) * package_sizes.get((p, s, w, t), 0)
+                for w in workshops_ids
+            )
+        )
+
+    for w, t in workshop_capacities.keys():
+        # The total number of packages ordered at workshop w at time t should not exceed its capacity
+        model.add(  # TODO: de hecho tiene mas sentido expresa la capacidad como el numero de paquetes que se pueden enviar
+            sum(
+                packages_orders.get((p, s, w, t), 0) * package_sizes.get((p, s, w, t), 0)
+                for p, s in current_stocks.keys()
+            )
+            <= workshop_capacities[w, t]
+        )
+
     for p, s, t in demand_predictions.keys():
         # met demand is the sum of all orders for product p, location l, and time t
         # model.add(met_demand[p,l,t] == sum(order_vars[p, l, t, o] for o in vars_tuples.o))
@@ -202,8 +255,15 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     unmet_penalty = 100
     overstock_penalty = 10
     understock_penalty = 12
+    package_penalty = 5
 
     objective_terms = []
+    objective_terms.extend(
+        [
+            package_penalty * package_costs[p, s, w, t] * pk_var
+            for (p, s, w, t), pk_var in packages_orders.items()
+        ]
+    )
     objective_terms.extend([unmet_penalty * ud_var for ud_var in unmet_demand.values()])
     objective_terms.extend(
         [overstock_penalty * overstock_var for overstock_var in overstocks.values()]
