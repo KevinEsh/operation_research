@@ -1,0 +1,56 @@
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "10000:9000"   # API port
+      - "10001:9001"   # Console UI
+    networks:
+      - this-network
+    environment:
+      MINIO_ROOT_USER: mlflow
+      MINIO_ROOT_PASSWORD: mlflow123
+    volumes:
+      - minio_data:/data
+
+  create-bucket:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      sh -c "
+        sleep 5;
+        mc alias set myminio http://minio:9000 mlflow mlflow123;
+        mc mb myminio/mlflow-artifacts;
+        mc policy set public myminio/mlflow-artifacts
+      "
+    networks:
+      - this-network
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow
+    container_name: mlflow
+    depends_on:
+      - minio
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - this-network    
+    command: sh -c "pip install boto3; mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow-artifacts --host 0.0.0.0 --port 5000"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_TRACKING_URI: http://host.docker.internal:5000
+      AWS_ACCESS_KEY_ID: mlflow
+      AWS_SECRET_ACCESS_KEY: mlflow123
+
+networks:
+  this-network:
+    name: this-network
+
+volumes:
+  minio_data:
