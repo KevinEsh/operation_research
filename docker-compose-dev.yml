@@ -1,4 +1,44 @@
 services:
+  database-server:
+    image: "postgres:15-alpine"
+    container_name: database-server
+    restart: always
+    networks:
+      - this-network
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      # - POSTGRES_DB=dbcore,dbmlflow,dbmetaflow
+    ports:
+      - "5432:5432"
+    command: ["postgres", "-c", "log_statement=none", "-c", "wal_level=logical"]
+    volumes:
+      - database-volume:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: database-pgadmin
+    networks:
+      - this-network
+    ports:
+      - 5433:80
+    # env_file:
+      # - .env
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=password
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    depends_on:
+      - database-server
+    volumes:
+      - pgadmin-volume:/var/lib/pgadmin/
+    
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -9,48 +49,112 @@ services:
     networks:
       - this-network
     environment:
-      MINIO_ROOT_USER: mlflow
-      MINIO_ROOT_PASSWORD: mlflow123
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
     volumes:
-      - minio_data:/data
+      - minio-volume:/data
 
-  create-bucket:
+  create-buckets:
     image: minio/mc
+    container_name: create-buckets
     depends_on:
       - minio
     entrypoint: >
       sh -c "
-        sleep 5;
-        mc alias set myminio http://minio:9000 mlflow mlflow123;
-        mc mb myminio/mlflow-artifacts;
-        mc policy set public myminio/mlflow-artifacts
+        mc alias set myminio http://minio:9000 admin password;
+        mc mb --ignore-existing myminio/mlflow-artifacts;
+        mc mb --ignore-existing myminio/metaflowstore;
+        mc mb --ignore-existing myminio/snapshots;
+        mc policy set public myminio/mlflow-artifacts;
+        exit 0;
       "
     networks:
       - this-network
 
-  mlflow:
+  mlflow-server:
     image: ghcr.io/mlflow/mlflow
-    container_name: mlflow
+    container_name: mlflow-server
     depends_on:
       - minio
+      - create-buckets
     ports:
       - "5000:5000"
     volumes:
-      - ./mlruns:/mlruns
+      - mlflow-volume:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - this-network    
-    command: sh -c "pip install boto3; mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://mlflow-artifacts --host 0.0.0.0 --port 5000"
+      - this-network
+    command: sh -c "pip install boto3 psycopg2-binary; mlflow server --backend-store-uri postgresql://admin:password@database-server:5432/dbmlflow --default-artifact-root s3://mlflow-artifacts --host 0.0.0.0 --port 5000"
     environment:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
       MLFLOW_TRACKING_URI: http://host.docker.internal:5000
-      AWS_ACCESS_KEY_ID: mlflow
-      AWS_SECRET_ACCESS_KEY: mlflow123
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+  metaflow-ui-server:
+    image: netflixoss/metaflow_metadata_service:v2.4.3
+    container_name: metaflow-ui-server
+    restart: always
+    ports:
+      - "${MUS_PORT}:8083"
+    environment:
+      - MF_METADATA_DB_HOST=metaflow-database
+      - MF_METADATA_DB_PORT=5432
+      - MF_METADATA_DB_USER=${MD_USER}
+      - MF_METADATA_DB_PSWD=${MD_PASSWORD}
+      - MF_METADATA_DB_NAME=${MD_DB}
+      - MF_UI_METADATA_PORT=8083
+      - MF_UI_METADATA_HOST=0.0.0.0
+      - UI_ENABLED=1
+      - AWS_ACCESS_KEY_ID=${MM_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MM_SECRET_KEY}
+      - FEATURE_ARTIFACT_SEARCH=1
+      - FEATURE_ARTIFACT_TABLE=1
+      - METAFLOW_DEFAULT_DATASTORE=s3
+      - METAFLOW_DATASTORE_SYSROOT_S3=s3://metaflowstore/Datastore
+      - METAFLOW_S3_ENDPOINT_URL=http://metaflow-minio:9000/
+    command: ["/opt/latest/bin/python3", "-m", "services.ui_backend_service.ui_server"]
+    depends_on:
+      - metaflow-database
+      - metaflow-metadata-service
+      - metaflow-minio
+    networks:
+      - metaflow-network
+
+  metaflow-metadata-service:
+    image: netflixoss/metaflow_metadata_service:v2.4.3
+    container_name: metaflow-metadata-service
+    restart: always
+    ports:
+      - "${MMS_METADATA_PORT}:8080"
+      - "${MMS_MIGRATION_PORT}:8082"
+    environment:
+      - MF_METADATA_DB_HOST=metaflow-database
+      - MF_METADATA_DB_PORT=5432
+      - MF_METADATA_DB_USER=${MD_USER}
+      - MF_METADATA_DB_PSWD=${MD_PASSWORD}
+      - MF_METADATA_DB_NAME=${MD_DB}
+      - MF_MIGRATION_ENDPOINTS_ENABLED=0
+      - MF_METADATA_PORT=8080
+      - MF_METADATA_HOST=0.0.0.0
+      - MF_MIGRATION_PORT=8082
+      - AWS_ACCESS_KEY_ID=${MM_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MM_SECRET_KEY}
+    depends_on:
+      - metaflow-database
+    networks:
+      - metaflow-network
 
 networks:
   this-network:
     name: this-network
 
 volumes:
-  minio_data:
+  database-volume:
+    name: database-volume
+  pgadmin-volume:
+    name: pgadmin-volume
+  minio-volume:
+    name: minio-volume
+  mlflow-volume:
+    name: mlflow-volume
