@@ -9,18 +9,18 @@ def get_postgres_uri() -> str:
     """
     Construct the PostgreSQL URI from environment variables.
     """
-    POSTGRES_USER = environ.get("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD = environ.get("POSTGRES_PASSWORD", "postgres")
+    POSTGRES_USER = environ.get("POSTGRES_USER", "admin")
+    POSTGRES_PASSWORD = environ.get("POSTGRES_PASSWORD", "password")
     POSTGRES_HOST = environ.get("POSTGRES_HOST", "localhost")
     return f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:5432/dbcore"
 
 
 def get_s3_params(timestamp: str) -> tuple:
-    s3_path = f"s3://{environ.get('S3_SNAPSHOT_BUCKET_NAME')}/{timestamp}"
+    s3_path = f"s3://{environ.get('S3_SNAPSHOT_BUCKET_NAME', 'snapshots')}/{timestamp}"
 
     s3_storage_options = {
-        "aws_access_key_id": environ.get("MM_ACCESS_KEY", "dummy_access_key"),
-        "aws_secret_access_key": environ.get("MM_SECRET_KEY", "dummy_secret_key"),
+        "aws_access_key_id": environ.get("MM_ACCESS_KEY", "admin"),
+        "aws_secret_access_key": environ.get("MM_SECRET_KEY", "password"),
         "aws_endpoint_url": environ.get("MM_ENDPOINT_URL", "http://localhost:10000"),
         "aws_region": "us-east-1",
     }

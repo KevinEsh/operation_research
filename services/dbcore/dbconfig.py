@@ -14,8 +14,8 @@ DATABASE_NAME = "dbcore"
 if DATABASE_SERVER == "duckdb":
     DATABASE_URL = "duckdb:///./data/core.db"
 elif DATABASE_SERVER == "postgresql":
-    POSTGRES_USER = environ.get("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD = environ.get("POSTGRES_PASSWORD", "postgres")
+    POSTGRES_USER = environ.get("POSTGRES_USER", "admin")
+    POSTGRES_PASSWORD = environ.get("POSTGRES_PASSWORD", "password")
     POSTGRES_HOST = environ.get("POSTGRES_HOST", "localhost")
     POSTGRES_PORT = 5432
     DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{DATABASE_NAME}"

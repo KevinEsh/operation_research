@@ -1,6 +1,7 @@
-from metaflow import FlowSpec, step
+from metaflow import FlowSpec, schedule, step
 
 
+@schedule(cron="0 0 * * *")
 class HelloFlow(FlowSpec):
     """
     A flow where Metaflow prints 'Hi'.
