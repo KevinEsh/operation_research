@@ -8,6 +8,7 @@ from schema import (
     DemandPredictions,
     Events,
     EventStores,
+    ProcurementPlans,
     Procurements,
     ProductGroups,
     Products,
@@ -323,6 +324,35 @@ def bulk_create_demandfulfillments(
         raise HTTPException(status_code=400, detail=get_error_msg(error))
 
     return {"demandfulfillments": [df.df_id for df in demandfulfillments]}
+
+
+@app.get("/procurementplans")
+def get_procurementplans(session: SessionType):
+    """
+    Get all procurement plans.
+    """
+    procurementplans = session.exec(select(ProcurementPlans)).all()
+    return {"procurementplans": procurementplans}
+
+
+@app.post("/procurementplans")
+def bulk_create_procurementplans(procurementplans: List[ProcurementPlans], session: SessionType):
+    """
+    Create procurement plans in bulk.
+    This endpoint expects a list of ProcurementPlans.
+    If no procurement plans are provided, it raises a 400 error.
+    """
+    if not procurementplans:
+        raise HTTPException(status_code=400, detail="No procurement plans provided")
+
+    try:
+        session.add_all(procurementplans)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=get_error_msg(error))
+
+    return {"procurementplans": [pl.pl_id for pl in procurementplans]}
 
 
 @app.get("/sales")

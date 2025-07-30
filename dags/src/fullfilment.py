@@ -104,7 +104,7 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         # model.add(new_orders[p,s,t] >= unmet_demand[p,s,t])
 
     max_capacity = 120
-    overstock_level = 50
+    overstock_level = 80
     understock_level = 40
     safety_stocks = 20
 
@@ -132,17 +132,17 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
 
     # Build the objective function with penalties for unmet demand, overstock, and understock
     unmet_penalty = 100
-    overstock_penalty = 2
-    understock_penalty = 1
+    overstock_penalty = 1
+    understock_penalty = 2
     package_cost_penalty = 1
 
     objective_terms = []
-    objective_terms.extend(
-        [
-            package_cost_penalty * package_costs[p, s, w, t] * pk_var
-            for (p, s, w, t), pk_var in packages_orders.items()
-        ]
-    )
+    # objective_terms.extend(
+    #     [
+    #         package_cost_penalty * package_costs[p, s, w, t] * pk_var
+    #         for (p, s, w, t), pk_var in packages_orders.items()
+    #     ]
+    # )
     objective_terms.extend([unmet_penalty * ud_var for ud_var in unmet_demand.values()])
     objective_terms.extend(
         [overstock_penalty * overstock_var for overstock_var in overstocks.values()]
@@ -167,86 +167,82 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         print("A solution could not be found, check the problem specification")
 
     # Get the solutions
-    met_demand_solution = get_solver_solutions(solver, met_demand)
-    unmet_demand_solution = get_solver_solutions(solver, unmet_demand)
-    expected_stocks_solution = get_solver_solutions(solver, expected_stocks)
-    new_orders_solution = get_solver_solutions(solver, new_orders)
-    packages_orders_solution = get_solver_solutions(solver, packages_orders)
-
-    agg_level_schema = [("p_id", pl.Int32), ("s_id", pl.Int32), ("c_rank", pl.Int32)]
-    df_es = solution_to_df(
-        expected_stocks_solution,
-        key_schema=agg_level_schema,
-        value_schema=("ending_inventory", pl.Int32),
+    df_demand_fulfillments = get_demand_fulfillments(
+        solver, met_demand, unmet_demand, expected_stocks, df_periods, agg_level
     )
-    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
-    df_es = solution_to_df(
-        new_orders_solution,
-        key_schema=agg_level_schema,
-        value_schema=("units", pl.Int32),
-    )
-    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
+    df_procurement_plans = get_procurement_plans(solver, packages_orders, package_sizes, df_periods)
 
-    df_demand_fulfillments = (
+    # print(df_demand_fulfillments.filter(df_p_id=2, df_s_id=2).sort("df_date"))
+
+    # print(df_procurement_plans.filter(pl_p_id=2, pl_s_id=2).sort("pl_w_id", "pl_date"))
+
+    # Save the output to a DuckDB database
+    load_dataframe_to_db(df_demand_fulfillments, "demandfulfillments")
+    load_dataframe_to_db(df_procurement_plans, "procurementplans")
+
+    return
+
+
+def get_demand_fulfillments(
+    solver, met_demand, unmet_demand, expected_stocks, df_periods, agg_level
+) -> pl.DataFrame:
+    return (
         solution_to_df(
-            packages_orders_solution,
-            key_schema=[
-                ("df_p_id", pl.Int32),
-                ("df_s_id", pl.Int32),
-                ("df_w_id", pl.Int32),
-                ("c_rank", pl.Int32),
-            ],
-            value_schema=("df_packages_sent", pl.Int32),
+            get_solver_solutions(solver, met_demand),
+            key_schema=agg_level,
+            value_schema="df_met_demand",
         )
-        .filter(pl.col("df_packages_sent") > 0)
+        .join(
+            solution_to_df(
+                get_solver_solutions(solver, unmet_demand),
+                key_schema=agg_level,
+                value_schema="df_unmet_demand",
+            ),
+            on=agg_level,
+            how="left",
+        )
+        .join(
+            solution_to_df(
+                get_solver_solutions(solver, expected_stocks),
+                key_schema=agg_level,
+                value_schema="df_closing_stocks",
+            ),
+            on=agg_level,
+            how="left",
+        )
+        .with_columns(df_initial_stocks=pl.col("df_met_demand") + pl.col("df_closing_stocks"))
+        .with_columns(pl.all().cast(pl.Int32))
         .join(
             df_periods,
             on="c_rank",
             how="left",
         )
         .drop("c_rank")
-        .rename({"c_date": "df_date"})
+        .rename({"c_date": "df_date", "p_id": "df_p_id", "s_id": "df_s_id"})
     )
 
-    print(df_demand_fulfillments.filter(df_p_id=2, df_s_id=2).sort("df_w_id", "df_date"))
 
-    print(demand_predictions)
-    df_es = solution_to_df(
-        met_demand_solution,
-        key_schema=agg_level_schema,
-        value_schema=("met_demand", pl.Int32),
+def get_procurement_plans(solver, packages_orders, package_sizes, df_periods):
+    packages_orders = get_solver_solutions(solver, packages_orders)
+    for keys, size in package_sizes.items():
+        packages_orders[keys] = packages_orders[keys] * size
+
+    return (
+        solution_to_df(
+            get_solver_solutions(solver, packages_orders),
+            key_schema=["pl_p_id", "pl_s_id", "pl_w_id", "c_rank"],
+            value_schema="pl_expected_units",
+        )
+        .with_columns(pl.all().cast(pl.Int32))
+        .filter(pl.col("pl_expected_units") > 0)
+        .join(
+            df_periods,
+            on="c_rank",
+            how="left",
+        )
+        .drop("c_rank")
+        .rename({"c_date": "pl_date"})
     )
-    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
-    df_es = solution_to_df(
-        unmet_demand_solution,
-        key_schema=agg_level_schema,
-        value_schema=("unmet_demand", pl.Int32),
-    )
-    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
-    # from pprint import pprint
-
-    # pprint(get_solver_solutions(solver, expected_stocks))
-
-    # print("Demand fulfillment DataFrame:")
-    # print(df_demand_fulfillments)
-    # a = (
-    #     df_demand_fulfillments.group_by(["df_w_id", "df_date"])
-    #     .agg(
-    #         pl.sum("df_packages_sent").alias("total_packages_sent"),
-    #     )
-    #     .group_by("df_w_id")
-    #     .agg(
-    #         pl.col("total_packages_sent").max().alias("max_packages_sent"),
-    #         pl.col("total_packages_sent").min().alias("min_packages_sent"),
-    #     )
-    #     .sort("df_w_id")
-    # )
-    # print(a)
-
-    # Save the output to a DuckDB database
-    load_dataframe_to_db(df_demand_fulfillments, "demandfulfillments")
-    # s3_dp_path = save_predictions(df_demand_predictions, today)
-    return
 
 
 def polars_to_dict(df, key_cols, value_col):
@@ -278,7 +274,7 @@ def solution_to_df(
     """
     # get list of tuples keys from solution_dict
     return pl.DataFrame(list(solution_dict.keys()), schema=key_schema, orient="row").with_columns(
-        pl.Series(value_schema[0], list(solution_dict.values())).cast(value_schema[1])
+        pl.Series(value_schema, list(solution_dict.values()))
     )
 
 
@@ -288,7 +284,7 @@ def get_solver_solutions(solver, var_dict):
     var_dict: dictionary with variable keys.
     Returns a dictionary with the variable keys and their values.
     """
-    return {keys: solver.Value(var_dict[keys]) for keys in var_dict.keys()}
+    return {keys: solver.Value(var) for keys, var in var_dict.items()}
 
 
 def get_input_data(today: str, procurement_window: int):

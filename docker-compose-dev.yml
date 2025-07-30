@@ -80,7 +80,7 @@ services:
       - pgadmin-volume:/var/lib/pgadmin/
 
   dbcore-api:
-    image: dbcore-server:latest
+    image: kevinesh/dbcore-api:latest
     container_name: dbcore-api
     networks:
       - this-network

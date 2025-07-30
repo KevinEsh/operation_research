@@ -208,6 +208,28 @@ class DemandPredictions(SQLModel, table=True):
 
 class DemandFulfillments(SQLModel, table=True):
     """
+
+    Args:
+        SQLModel (_type_): _description_
+        table (bool, optional): _description_. Defaults to True.
+    """
+
+    __table_args__ = (
+        UniqueConstraint("df_p_id", "df_s_id", "df_date", name="unique_demand_fulfillment"),
+    )
+
+    df_id: Optional[int] = id_field("demandfulfillments")
+    df_p_id: int = Field(foreign_key="products.p_id")
+    df_s_id: int = Field(foreign_key="stores.s_id")
+    df_date: date
+    df_initial_stocks: int = Field(default=None, ge=0)
+    df_closing_stocks: int = Field(default=None, ge=0)
+    df_met_demand: int = Field(default=None, ge=0)
+    df_unmet_demand: int = Field(default=None, ge=0)
+
+
+class ProcurementPlans(SQLModel, table=True):
+    """
     CREATE TABLE IF NOT EXISTS demand_fulfillments (
         df_id INTEGER PRIMARY KEY DEFAULT nextval('demand_fulfillments_id_seq'),
         df_p_id INTEGER,
@@ -230,16 +252,16 @@ class DemandFulfillments(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint(
-            "df_p_id", "df_s_id", "df_w_id", "df_date", name="unique_demand_fulfillment"
+            "pl_p_id", "pl_s_id", "pl_w_id", "pl_date", name="unique_procurement_plan"
         ),
     )
 
-    df_id: Optional[int] = id_field("demandfulfillments")
-    df_p_id: int = Field(foreign_key="products.p_id")
-    df_s_id: int = Field(foreign_key="stores.s_id")
-    df_w_id: int = Field(foreign_key="workshops.w_id")
-    df_date: date
-    df_packages_sent: int = Field(default=None, ge=0)
+    pl_id: Optional[int] = id_field("procurementplans")
+    pl_p_id: int = Field(foreign_key="products.p_id")
+    pl_s_id: int = Field(foreign_key="stores.s_id")
+    pl_w_id: int = Field(foreign_key="workshops.w_id")
+    pl_date: date
+    pl_expected_units: int = Field(default=None, ge=0)
 
 
 class Sales(SQLModel, table=True):
