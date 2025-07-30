@@ -168,3 +168,104 @@ SELECT
 FROM workshops
 CROSS JOIN date_range
 """
+
+query_demand_evolution = """
+WITH RECURSIVE daily_data AS (
+    SELECT
+        dp.dp_date,
+        dp.dp_p_id,
+        dp.dp_s_id,
+        dp.dp_mean AS pred_units_sold,
+        COALESCE(df.units_sent, 0) AS units_sent,
+        ROW_NUMBER() OVER (PARTITION BY dp.dp_p_id, dp.dp_s_id ORDER BY dp.dp_date) as rn
+    FROM demandpredictions dp
+    LEFT JOIN (
+        SELECT
+            df_date,
+            df_p_id,
+            df_s_id,
+            SUM(df_packages_sent * tl_package_size) AS units_sent
+        FROM demandfulfillments
+        LEFT JOIN transportlinks ON tl_p_id = df_p_id AND tl_s_id = df_s_id AND tl_w_id = df_w_id
+        WHERE df_date BETWEEN DATE '{date_from}' + INTERVAL '1 day' AND DATE '{date_from}' + INTERVAL '7 day'
+          -- AND df_s_id = 1
+        GROUP BY 1, 2, 3
+    ) df ON dp.dp_date = df.df_date AND dp.dp_p_id = df.df_p_id AND dp.dp_s_id = df.df_s_id
+    WHERE dp.dp_date BETWEEN DATE '{date_from}' + INTERVAL '1 day' AND DATE '{date_from}' + INTERVAL '7 day'
+      -- AND dp.dp_s_id = 1
+),
+stocks_evolution AS (
+    -- Anchor member: initial stock for the first day
+    SELECT
+        d.dp_date,
+        d.dp_p_id,
+        d.dp_s_id,
+        d.pred_units_sold,
+        d.units_sent,
+        s.sk_units::bigint AS init_stocks,
+        LEAST(s.sk_units + d.units_sent, d.pred_units_sold) AS met_demand,
+        d.pred_units_sold - LEAST(s.sk_units + d.units_sent, d.pred_units_sold) AS unmet_demand,
+        d.rn
+    FROM daily_data d
+    JOIN stocks s ON s.sk_p_id = d.dp_p_id AND s.sk_s_id = d.dp_s_id AND s.sk_date = DATE '{date_from}'
+    WHERE d.rn = 1
+
+    UNION ALL
+
+    -- Recursive member: calculate next day's stock
+    SELECT
+        d.dp_date,
+        d.dp_p_id,
+        d.dp_s_id,
+        d.pred_units_sold,
+        d.units_sent,
+        (p.init_stocks + p.units_sent - p.met_demand) AS init_stocks,
+        LEAST((p.init_stocks + p.units_sent - p.met_demand) + d.units_sent, d.pred_units_sold) AS met_demand,
+        d.pred_units_sold - LEAST((p.init_stocks + p.units_sent - p.met_demand) + d.units_sent, d.pred_units_sold) AS unmet_demand,
+        d.rn
+    FROM daily_data d
+    JOIN stocks_evolution p ON d.dp_p_id = p.dp_p_id AND d.dp_s_id = p.dp_s_id AND d.rn = p.rn + 1
+)
+SELECT
+    se.dp_date AS c_date,
+    p.p_name,
+    s.s_name,
+    se.pred_units_sold::integer,
+    se.units_sent::integer,
+    se.init_stocks::integer,
+    se.met_demand::integer,
+    se.unmet_demand::integer
+FROM stocks_evolution se
+LEFT JOIN products p ON p.p_id = se.dp_p_id
+LEFT JOIN stores s ON s.s_id = se.dp_s_id
+ORDER BY s.s_name, p.p_name, se.dp_date
+"""
+
+query_stores_locations = """
+select s_name, s_longitude, s_latitude
+from stores
+"""
+
+query_workshops_locations = """
+select w_name, w_longitude, w_latitude, w_capacity
+from workshops
+"""
+
+query_sales_stocks = """
+select 
+  sa_date as c_date, 
+  p_name, 
+  s_name, 
+  sa_units_sold as units_sold,
+  sa_units_sold + 10 as units
+from sales
+left join products on p_id = sa_p_id
+left join stores on s_id = sa_s_id
+where sa_date between date '{date_from}' - interval '14 day' and '{date_from}'
+"""
+
+if __name__ == "__main__":
+    # Example usage
+    date_from = "{date_from}"
+    q = query_demand_evolution.format(date_from=date_from, window=7, store_id=1)
+    print(q)
