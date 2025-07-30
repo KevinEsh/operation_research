@@ -11,8 +11,6 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         today (str): The current date in 'YYYY-MM-DD' format.
         procurement_window (int): The number of days to consider for procurement.
     """
-    from pprint import pprint
-
     agg_level = ["p_id", "s_id", "c_rank"]
     # Fetch input data
     df_periods, df_procurements, df_current_stocks, df_transportlinks, df_workshops = (
@@ -27,8 +25,6 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     workshop_capacities = polars_to_dict(
         df_workshops, key_cols=["w_id", "c_rank"], value_col="capacity"
     )
-    print("Workshops capacities:")
-    pprint(workshop_capacities)
 
     # Create variables for new orders. These is the recommended orders based on demand predictions.
     new_orders = polars_to_dict(df_procurements, key_cols=agg_level, value_col="needs_order")
@@ -44,8 +40,6 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
     package_costs = polars_to_dict(
         df_transportlinks, key_cols=["p_id", "s_id", "w_id", "c_rank"], value_col="package_cost"
     )
-    print("Package sizes:")
-    pprint(package_sizes)
     packages_orders = package_sizes.copy()
 
     for p, s, w, t in packages_orders.keys():
@@ -85,8 +79,7 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
                 for w in workshops_ids
             )
         )
-    print("current stocks")
-    pprint(current_stocks)
+
     for w, t in workshop_capacities.keys():
         # The total number of packages ordered at workshop w at time t should not exceed its capacity
         model.add(  # TODO: de hecho tiene mas sentido expresa la capacidad como el numero de paquetes que se pueden enviar
@@ -96,7 +89,6 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
             )
             <= workshop_capacities[w, t]
         )
-        # print(f"")
 
     for p, s, t in demand_predictions.keys():
         # met demand is the sum of all orders for product p, location l, and time t
@@ -112,9 +104,9 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         # model.add(new_orders[p,s,t] >= unmet_demand[p,s,t])
 
     max_capacity = 120
-    overstock_level = 80
-    understock_level = 70
-    safety_stocks = 30
+    overstock_level = 50
+    understock_level = 40
+    safety_stocks = 20
 
     for p, s, t in expected_stocks.keys():
         if t == 1:  # if p, s has not recorded current stock, we use the current stock as 0
@@ -140,8 +132,8 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
 
     # Build the objective function with penalties for unmet demand, overstock, and understock
     unmet_penalty = 100
-    overstock_penalty = 10
-    understock_penalty = 12
+    overstock_penalty = 2
+    understock_penalty = 1
     package_cost_penalty = 1
 
     objective_terms = []
@@ -175,13 +167,25 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         print("A solution could not be found, check the problem specification")
 
     # Get the solutions
-    # met_demand_solution = get_solver_solutions(solver, met_demand)
-    # unmet_demand_solution = get_solver_solutions(solver, unmet_demand)
-    # expected_stocks_solution = get_solver_solutions(solver, expected_stocks)
-    # new_orders_solution = get_solver_solutions(solver, new_orders)
+    met_demand_solution = get_solver_solutions(solver, met_demand)
+    unmet_demand_solution = get_solver_solutions(solver, unmet_demand)
+    expected_stocks_solution = get_solver_solutions(solver, expected_stocks)
+    new_orders_solution = get_solver_solutions(solver, new_orders)
     packages_orders_solution = get_solver_solutions(solver, packages_orders)
 
-    # agg_level_schema = [("p_id", pl.Int32), ("s_id", pl.Int32), ("c_rank", pl.Int32)]
+    agg_level_schema = [("p_id", pl.Int32), ("s_id", pl.Int32), ("c_rank", pl.Int32)]
+    df_es = solution_to_df(
+        expected_stocks_solution,
+        key_schema=agg_level_schema,
+        value_schema=("ending_inventory", pl.Int32),
+    )
+    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
+    df_es = solution_to_df(
+        new_orders_solution,
+        key_schema=agg_level_schema,
+        value_schema=("units", pl.Int32),
+    )
+    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
 
     df_demand_fulfillments = (
         solution_to_df(
@@ -204,7 +208,26 @@ def run_fulfillment(today: str, procurement_window: int) -> None:
         .rename({"c_date": "df_date"})
     )
 
-    print("Demand fulfillment DataFrame:")
+    print(df_demand_fulfillments.filter(df_p_id=2, df_s_id=2).sort("df_w_id", "df_date"))
+
+    print(demand_predictions)
+    df_es = solution_to_df(
+        met_demand_solution,
+        key_schema=agg_level_schema,
+        value_schema=("met_demand", pl.Int32),
+    )
+    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
+    df_es = solution_to_df(
+        unmet_demand_solution,
+        key_schema=agg_level_schema,
+        value_schema=("unmet_demand", pl.Int32),
+    )
+    print(df_es.filter(p_id=2, s_id=2).sort("c_rank"))
+    # from pprint import pprint
+
+    # pprint(get_solver_solutions(solver, expected_stocks))
+
+    # print("Demand fulfillment DataFrame:")
     # print(df_demand_fulfillments)
     # a = (
     #     df_demand_fulfillments.group_by(["df_w_id", "df_date"])

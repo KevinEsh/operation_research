@@ -10,15 +10,16 @@ from src.dataloaders import (
     map_names_to_ids,
 )
 from src.forecasttools import run_predict_demand, run_train_and_register_best_model
+from src.fullfilment import run_fulfillment
 from src.pipeline import create_train_dataset, feature_engineering
 
 # current_date = now().date().isoformat()  # .to_iso8601_string()
 
 
 @dag(
-    dag_id="example_dag_multiple_outputs",
+    dag_id="weekly_run",
     schedule=None,
-    start_date=datetime(2025, 1, 1),
+    start_date=datetime(2025, 7, 28),
     catchup=False,
     params={
         "timestamp": Param(
@@ -41,7 +42,7 @@ from src.pipeline import create_train_dataset, feature_engineering
         ),
     },
 )
-def example_dag_multi_output():
+def weekly_run():
     @task()  # multiple_outputs=True
     def coreload_data(tablename: str, **kwargs: str):
         timestamp = kwargs["params"]["timestamp"]
@@ -114,6 +115,20 @@ def example_dag_multi_output():
         timestamp = kwargs["params"]["timestamp"]
         return run_predict_demand(timestamp)
 
+    @task
+    def fulfill_demand(**kwargs: str):
+        timestamp = kwargs["params"]["timestamp"]
+        return run_fulfillment(timestamp, procurement_window=7)
+
+    @task
+    def update_dashboard(**kwargs: str):
+        """
+        This task is a placeholder for UI snapshots.
+        It can be used to visualize the data or results in the Airflow UI.
+        """
+        print("UI snapshots task executed.")
+        return {"status": "success"}
+
     # Llama a task1 y accede a sus salidas por clave.
     # products_map = get_all_products_map()
     products = get_map_name_to_id.override(task_id="get_products")("products", "p_name", "p_id")
@@ -182,14 +197,15 @@ def example_dag_multi_output():
     )
 
     s3_paths = run_feature_engineering(s3_snapshot_path)
-    end_experiment = optimize_model_params_experiment(s3_paths=s3_paths)
-    end_experiment >> train_and_register_best_model() >> predict_demand()
+    # end_experiment = optimize_model_params_experiment(s3_paths=s3_paths)
+    (
+        optimize_model_params_experiment(s3_paths=s3_paths)
+        >> train_and_register_best_model()
+        >> predict_demand()
+        >> fulfill_demand()
+        >> update_dashboard()
+    )
+    return
 
-    # coreload_stores() >> taskall()
-    # coreload_workshops() >> taskall()
 
-    # task2(some_list=outputs_t1["my_list"])
-    # task3(some_number=outputs_t1["my_number"], some_string=outputs_t1["my_string"])
-
-
-example_dag_multi_output()
+weekly_run()
