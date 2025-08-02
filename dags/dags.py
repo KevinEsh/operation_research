@@ -3,6 +3,7 @@ from airflow.models.param import Param
 
 # get current date in string format from pendulum
 from pendulum import datetime
+from src.dashboarcreator import run_dashboards
 from src.dataloaders import (
     get_dataframe_from_s3,
     get_datamap_to_ids,
@@ -126,7 +127,9 @@ def weekly_run():
         This task is a placeholder for UI snapshots.
         It can be used to visualize the data or results in the Airflow UI.
         """
-        print("UI snapshots task executed.")
+        timestamp = kwargs["params"]["timestamp"]
+        print("UI snapshots task executed. 2")
+        run_dashboards(timestamp)
         return {"status": "success"}
 
     # Llama a task1 y accede a sus salidas por clave.

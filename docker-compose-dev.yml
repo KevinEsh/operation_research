@@ -122,6 +122,7 @@ services:
         mc mb --ignore-existing myminio/mlflow-artifacts;
         mc mb --ignore-existing myminio/metaflowstore;
         mc mb --ignore-existing myminio/snapshots;
+        mc mb --ignore-existing myminio/dashboards;
         mc policy set public myminio/mlflow-artifacts;
         exit 0;
       "

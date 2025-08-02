@@ -192,6 +192,7 @@ from demandfulfillments
 left join pl on pl_p_id =df_p_id and pl_s_id=df_s_id and pl_date = df_date
 left join products on p_id = df_p_id
 left join stores on s_id = df_s_id
+where df_date > '{date_from}'
 order by 1,2,3
 """
 
@@ -215,7 +216,7 @@ select
 from sales
 left join products on p_id = sa_p_id
 left join stores on s_id = sa_s_id
-where sa_date between date '{date_from}' - interval '14 day' and '{date_from}'
+where sa_date between date '{date_from}' - interval '{window} day' and '{date_from}'
 """
 
 if __name__ == "__main__":

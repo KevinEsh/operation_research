@@ -53,6 +53,22 @@ def get_s3_credentials() -> tuple:
     }
 
 
+def get_s3_client():
+    """
+    Create and return an S3 client using the credentials from environment variables.
+    """
+    import boto3
+
+    credentials = get_s3_credentials()
+    return boto3.client(
+        "s3",
+        aws_access_key_id=credentials["aws_access_key_id"],
+        aws_secret_access_key=credentials["aws_secret_access_key"],
+        endpoint_url=credentials["aws_endpoint_url"],
+        region_name=credentials["aws_region"],
+    )
+
+
 def get_postgres_uri(db: str = "dbcore") -> str:
     """
     Construct the PostgreSQL URI from environment variables.
