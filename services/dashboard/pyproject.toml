@@ -1,0 +1,13 @@
+[project]
+name = "dashboard"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "connectorx>=0.4.3",
+    "plotly>=6.2.0",
+    "polars>=1.32.0",
+    "s3fs>=2025.7.0",
+    "streamlit>=1.47.1",
+]

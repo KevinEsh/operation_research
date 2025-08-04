@@ -31,6 +31,18 @@ def save_fig_to_s3(fig, file_path, s3_client):
     return file_path
 
 
+def get_html_from_s3(file_path, s3_client):
+    """
+    Retrieve the HTML file from S3.
+    """
+    try:
+        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_path)
+        return response["Body"].read().decode("utf-8")
+    except s3_client.exceptions.NoSuchKey:
+        print(f"File {file_path} not found in S3 bucket {BUCKET_NAME}.")
+        return None
+
+
 def plot_demand_balance(df_demand_evol: pl.DataFrame, df_sales_stocks: pl.DataFrame, s3_client):
     """Plot the inventory balance for each product in each store over time.
     The balance is calculated as the difference between expected initial inventory, expected deliveries,

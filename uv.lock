@@ -2936,6 +2936,7 @@ dependencies = [
     { name = "mlflow-skinny" },
     { name = "numpy" },
     { name = "ortools" },
+    { name = "plotly" },
     { name = "polars" },
     { name = "psycopg2-binary" },
     { name = "s3fs" },
@@ -2946,7 +2947,6 @@ dev = [
     { name = "duckdb" },
     { name = "ipykernel" },
     { name = "nbformat" },
-    { name = "plotly" },
     { name = "ruff" },
     { name = "streamlit" },
 ]
@@ -2963,6 +2963,7 @@ requires-dist = [
     { name = "mlflow-skinny", specifier = ">=3.1.4" },
     { name = "numpy", specifier = "~=1.24" },
     { name = "ortools", specifier = "~=9.13" },
+    { name = "plotly", specifier = ">=5.24.1" },
     { name = "polars", specifier = "==1.31.*" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "s3fs", specifier = ">=0.4.2" },
@@ -2973,7 +2974,6 @@ dev = [
     { name = "duckdb", specifier = ">=1.3.0" },
     { name = "ipykernel", specifier = "==6.29.5" },
     { name = "nbformat", specifier = "==5.10.4" },
-    { name = "plotly", specifier = ">=5.24.1" },
     { name = "ruff", specifier = ">=0.12.4" },
     { name = "streamlit", specifier = ">=1.45.1" },
 ]

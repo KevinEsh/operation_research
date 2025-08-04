@@ -51,8 +51,7 @@ Mercanova tackles the complexities of retail demand and fulfillment by combining
 
 ## ⚙️ Architecture Overview
 
-[Insert your architecture diagram here]
-
+![Architecture Overview](images/architechture.png)
 
 ### Explaining Components
 
@@ -72,78 +71,65 @@ Mercanova tackles the complexities of retail demand and fulfillment by combining
 
 ## 📦 How to Use Mercanova
 
+### Requirements
+- uv
+- Docker
+- Docker Compose
+
 ### Setup (Local)
 
 ```bash
 git clone https://github.com/your-org/mercanova.git
 cd mercanova
-make install  # Or poetry/pipenv/etc.
+make run  # Or poetry/pipenv/etc.
+```
+
+to stop the server, run:
+
+```bash
+make down
 ```
 
 Upload sample data from Favorita retail dataset: [link](https://www.kaggle.com/datasets/rodrigodf/favorita-grocery-sales-forecasting)
 
 ```bash
-python demand_engine/train.py --config configs/store_model.yaml
+uv run python upload_sample.py
 ```
-Run Optimization
 
-python optimizer/solve.py --scenario scenarios/default.json
+## 📊 Run the Pipeline
+By default, the pipeline is set to run weekly. You can trigger it manually by entering the Airflow UI at `http://localhost:8080` and running the `weekly_run` DAG.
 
-Launch API
+![airflow](images/airflow_ui.png)
 
-uvicorn api_gateway.main:app --reload
+## 🎬 Exploring the UI
 
-🚢 Deployment
+Go to `http://localhost:8501` to access the Mercanova UI. Select the "Demand Overview" tab to view the demand forecast plots, "Procurement Overview" to see order recommendations, and fulfillment optimization tables.
 
-Mercanova is designed for both on-prem and cloud-native deployment.
-Deploy Locally (Docker Compose)
+<video src="images/fixed_output.mp4" width="600" controls="true">
+  <p>Your browser does not support the video tag.</p>
+</video>
 
-docker-compose up --build
-
-Deploy to Kubernetes
-
-kubectl apply -f infra/k8s/
-
-CI/CD Pipelines
-
-    [Insert GitHub Actions / ArgoCD / CircleCI pipeline description]
-
-📊 Sample Outputs
-
-    Include:
-
-        Demand forecast plots
-
-        Inventory recommendations
-
-        Fulfillment optimization tables
-
-        Store-level visual dashboards
-
-🧩 Extensibility
+## 🧩 Extensibility
 
 You can plug in your own:
 
-    Custom ML models (/demand_engine/custom_model.py)
+- Custom ML models (/services/demand_forecast/forecasters.py)
+- Supply constraints for optimization (/services/demand_fulfillment/fulfillment.py)
+- Add more dashboards (/services/dashboard/pages/)
 
-    Supply constraints for optimization (/optimizer/constraints/)
 
-    Frontends (dashboards, CLI tools)
-
-    Integrations (ERP, POS, WMS systems)
-
-🤝 Contributing
+## 🤝 Contributing
 
 We welcome contributions!
 See CONTRIBUTING.md for details.
 🧠 Inspiration Behind the Name
 
-    "Mercanova" combines the legacy of commerce ("mercato") with the vision of innovation ("nova"). It's a system designed to make markets smarter, more adaptive, and more efficient—through intelligence, not guesswork.
+"Mercanova" combines the legacy of commerce ("mercato") with the vision of innovation ("nova"). It's a system designed to make markets smarter, more adaptive, and more efficient—through intelligence, not guesswork.
 
-📜 License
+## 📜 License
 
 MIT (or other) — See LICENSE
 🌌 Final Thought
 
-    "Prediction is not about knowing the future — it's about preparing better options for it."
-    – Mercanova Design Philosophy
+"Prediction is not about knowing the future — it's about preparing better options for it."
+– Mercanova Design Philosophy
