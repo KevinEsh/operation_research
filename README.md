@@ -105,9 +105,7 @@ By default, the pipeline is set to run weekly. You can trigger it manually by en
 
 Go to `http://localhost:8501` to access the Mercanova UI. Select the "Demand Overview" tab to view the demand forecast plots, "Procurement Overview" to see order recommendations, and fulfillment optimization tables.
 
-<video src="images/fixed_output.mp4" width="600" controls="true">
-  <p>Your browser does not support the video tag.</p>
-</video>
+![Mercanova UI Demo](images/fixed_output.gif)
 
 ## 🧩 Extensibility
 
